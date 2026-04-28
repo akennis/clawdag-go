@@ -105,7 +105,7 @@ covering one true case and one false case per op (table-driven is fine).
 
 ---
 
-## Group 2 — Coalesce, switch, select, default
+## Group 2 — Coalesce, switch, select, default ✅ DONE
 
 **Why:** `llm-hints.md:85` already tells the LLM to use `CoalesceIntOp`, but
 no Coalesce op exists. Without coalesce, conditional branches can't merge

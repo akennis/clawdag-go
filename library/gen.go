@@ -31,4 +31,11 @@
 //go:generate daggen -type=IfStringHasSuffixOp -output=predicate_ifstringhassuffix_gen.go
 //go:generate daggen -type=IfEmptyStringOp -output=predicate_ifemptystring_gen.go
 //go:generate daggen -type=BetweenFloatOp -output=predicate_betweenfloat_gen.go
+//go:generate daggen -type=SelectStringOp -output=select_selectstring_gen.go
+//go:generate daggen -type=SelectFloat64Op -output=select_selectfloat64_gen.go
+//go:generate daggen -type=SelectIntOp -output=select_selectint_gen.go
+//go:generate daggen -type=SelectBoolOp -output=select_selectbool_gen.go
+//go:generate daggen -type=DefaultStringOp -output=select_defaultstring_gen.go
+//go:generate daggen -type=DefaultFloat64Op -output=select_defaultfloat64_gen.go
+//go:generate daggen -type=DefaultIntOp -output=select_defaultint_gen.go
 package library
