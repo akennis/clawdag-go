@@ -5,25 +5,25 @@ import (
 	"fmt"
 )
 
-func (op *StringToLowerOp) InputFields() map[string]any {
+func (op *RoundOp) InputFields() map[string]any {
 	return map[string]any {
 		"Value": &op.Value,
 	}
 }
 
-func (op *StringToLowerOp) OutputFields() map[string]any {
+func (op *RoundOp) OutputFields() map[string]any {
 	return map[string]any {
 		"Result": &op.Result,
 	}
 }
 
-func (op *StringToLowerOp) SetInputField(field string, value any) error {
+func (op *RoundOp) SetInputField(field string, value any) error {
 	switch field {
 	case "Value":
-		if val, ok := value.(*string); ok {
+		if val, ok := value.(*float64); ok {
 			op.Value = val
 		} else {
-			return fmt.Errorf("field %s is not type of *string", field)
+			return fmt.Errorf("field %s is not type of *float64", field)
 		}
 	
 	default:
@@ -32,11 +32,11 @@ func (op *StringToLowerOp) SetInputField(field string, value any) error {
 	return nil
 }
 
-func (op *StringToLowerOp) ResetFields() {
-	var zeroValue *string
+func (op *RoundOp) ResetFields() {
+	var zeroValue *float64
 	op.Value = zeroValue
 	
-	var zeroResult string
+	var zeroResult float64
 	op.Result = zeroResult
 	
 }

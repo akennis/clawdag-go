@@ -36,6 +36,15 @@ var promptFormatFloat64Slice string
 //go:embed prompts/format_string_slice.md
 var promptFormatStringSlice string
 
+//go:embed prompts/format_bool.md
+var promptFormatBool string
+
+//go:embed prompts/format_map_string_string.md
+var promptFormatMapStringString string
+
+//go:embed prompts/format_int_slice.md
+var promptFormatIntSlice string
+
 //go:embed prompts/format_default.md
 var promptFormatDefault string
 
@@ -125,6 +134,12 @@ func (op *AIComputeOp[In, Out]) Run(ctx context.Context) error {
 	if op.Input != nil {
 		if f, ok := any(op.Input).(AIInputFormatter); ok {
 			inputDesc = f.FormatForPrompt()
+		} else if sp, ok := any(op.Input).(*[]string); ok {
+			lines := make([]string, len(*sp))
+			for i, s := range *sp {
+				lines[i] = fmt.Sprintf("%d. %s", i+1, s)
+			}
+			inputDesc = strings.Join(lines, "\n")
 		} else {
 			inputDesc = fmt.Sprintf("%+v", *op.Input)
 		}
@@ -203,6 +218,12 @@ func (op *AIComputeOp[In, Out]) builtinFormatDescription() string {
 		return strings.TrimSpace(promptFormatFloat64Slice)
 	case *[]string:
 		return strings.TrimSpace(promptFormatStringSlice)
+	case *bool:
+		return strings.TrimSpace(promptFormatBool)
+	case *map[string]string:
+		return strings.TrimSpace(promptFormatMapStringString)
+	case *[]int:
+		return strings.TrimSpace(promptFormatIntSlice)
 	default:
 		return strings.TrimSpace(promptFormatDefault)
 	}
@@ -226,21 +247,91 @@ func (op *AIComputeOp[In, Out]) parseResult(raw string) error {
 	case *string:
 		*v = raw
 	case *[]float64:
-		var s []float64
-		if err := json.Unmarshal([]byte(raw), &s); err != nil {
-			return fmt.Errorf("expected []float64, got %q: %w", raw, err)
+		if raw == "" {
+			*v = nil
+			return nil
+		}
+		parts := strings.Split(raw, ",")
+		s := make([]float64, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			f, err := strconv.ParseFloat(p, 64)
+			if err != nil {
+				return fmt.Errorf("expected []float64 CSV, got %q: %w", raw, err)
+			}
+			s = append(s, f)
 		}
 		*v = s
 	case *[]string:
-		var s []string
-		if err := json.Unmarshal([]byte(raw), &s); err != nil {
-			return fmt.Errorf("expected []string, got %q: %w", raw, err)
+		if raw == "" {
+			*v = nil
+			return nil
+		}
+		parts := strings.Split(raw, ",")
+		s := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				s = append(s, p)
+			}
+		}
+		*v = s
+	case *bool:
+		switch strings.ToLower(raw) {
+		case "true", "yes":
+			*v = true
+		case "false", "no":
+			*v = false
+		default:
+			return fmt.Errorf("expected bool (true/false), got %q", raw)
+		}
+	case *map[string]string:
+		if raw == "" {
+			*v = map[string]string{}
+			return nil
+		}
+		m := make(map[string]string)
+		for _, pair := range strings.Split(raw, ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			idx := strings.IndexByte(pair, '=')
+			if idx < 0 {
+				return fmt.Errorf("expected key=value pair, got %q", pair)
+			}
+			m[strings.TrimSpace(pair[:idx])] = strings.TrimSpace(pair[idx+1:])
+		}
+		*v = m
+	case *[]int:
+		if raw == "" {
+			*v = nil
+			return nil
+		}
+		parts := strings.Split(raw, ",")
+		s := make([]int, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return fmt.Errorf("expected []int CSV, got %q: %w", raw, err)
+			}
+			s = append(s, n)
 		}
 		*v = s
 	case AIResponseParser:
 		return v.ParseAIResponse(raw)
 	default:
-		return fmt.Errorf("unsupported output type %T; implement AIResponseParser", op.Result)
+		// Fallback: attempt JSON unmarshal for unknown types that implement json.Unmarshaler
+		if err := json.Unmarshal([]byte(raw), &op.Result); err != nil {
+			return fmt.Errorf("unsupported output type %T; implement AIResponseParser", op.Result)
+		}
 	}
 	return nil
 }

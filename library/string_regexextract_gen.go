@@ -5,23 +5,23 @@ import (
 	"fmt"
 )
 
-func (op *StringToLowerOp) InputFields() map[string]any {
+func (op *RegexExtractOp) InputFields() map[string]any {
 	return map[string]any {
-		"Value": &op.Value,
+		"Input": &op.Input,
 	}
 }
 
-func (op *StringToLowerOp) OutputFields() map[string]any {
+func (op *RegexExtractOp) OutputFields() map[string]any {
 	return map[string]any {
 		"Result": &op.Result,
 	}
 }
 
-func (op *StringToLowerOp) SetInputField(field string, value any) error {
+func (op *RegexExtractOp) SetInputField(field string, value any) error {
 	switch field {
-	case "Value":
+	case "Input":
 		if val, ok := value.(*string); ok {
-			op.Value = val
+			op.Input = val
 		} else {
 			return fmt.Errorf("field %s is not type of *string", field)
 		}
@@ -32,9 +32,9 @@ func (op *StringToLowerOp) SetInputField(field string, value any) error {
 	return nil
 }
 
-func (op *StringToLowerOp) ResetFields() {
-	var zeroValue *string
-	op.Value = zeroValue
+func (op *RegexExtractOp) ResetFields() {
+	var zeroInput *string
+	op.Input = zeroInput
 	
 	var zeroResult string
 	op.Result = zeroResult

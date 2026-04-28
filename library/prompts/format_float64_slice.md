@@ -1,1 +1,1 @@
-Respond with a JSON array of numbers only. No explanation. Example: [1.5, 2.0, 3.7]
+Respond with a comma-separated list of decimal numbers only. No brackets, no explanation. Example: 1.5,2.0,3.7

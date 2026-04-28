@@ -1,0 +1,54 @@
+package library
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/wwz16/dagor/config"
+	"github.com/wwz16/dagor/operator"
+)
+
+const IfStringEqOpDescription = "IfStringEqOp: reports whether two strings are equal. Inputs: A *string, B *string. Output: Match bool."
+
+type IfStringEqOp struct {
+	A     *string
+	B     *string
+	Match bool
+}
+
+func (op *IfStringEqOp) Setup(_ *config.Params) error { return nil }
+func (op *IfStringEqOp) Reset() error                 { return nil }
+func (op *IfStringEqOp) Run(_ context.Context) error {
+	op.Match = *op.A == *op.B
+	log.Printf("[DEBUG] IfStringEqOp: %q == %q → %v", *op.A, *op.B, op.Match)
+	return nil
+}
+func (op *IfStringEqOp) InputFields() map[string]any {
+	return map[string]any{"A": &op.A, "B": &op.B}
+}
+func (op *IfStringEqOp) OutputFields() map[string]any { return map[string]any{"Match": &op.Match} }
+func (op *IfStringEqOp) SetInputField(field string, value any) error {
+	switch field {
+	case "A":
+		val, ok := value.(*string)
+		if !ok {
+			return fmt.Errorf("field A: expected *string, got %T", value)
+		}
+		op.A = val
+	case "B":
+		val, ok := value.(*string)
+		if !ok {
+			return fmt.Errorf("field B: expected *string, got %T", value)
+		}
+		op.B = val
+	default:
+		return fmt.Errorf("field %s is not defined", field)
+	}
+	return nil
+}
+func (op *IfStringEqOp) ResetFields() { op.A = nil; op.B = nil; op.Match = false }
+
+func init() {
+	operator.RegisterOp[IfStringEqOp]()
+}

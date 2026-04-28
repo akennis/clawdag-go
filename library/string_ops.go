@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"github.com/wwz16/dagor/config"
@@ -87,6 +88,134 @@ func (op *StringToLowerOp) Run(_ context.Context) error {
 	return nil
 }
 
+const StringConcatOpDescription = "StringConcatOp: concatenates two strings. Inputs: A *string, B *string. Output: Result string."
+const StringSplitOpDescription = `StringSplitOp: splits a string by a separator. Param: sep (default ","). Input: Input *string. Output: Result []string.`
+const RegexMatchOpDescription = `RegexMatchOp: reports whether the input matches a compiled regex. Param: pattern (required). Input: Input *string. Output: Match bool.`
+const RegexExtractOpDescription = `RegexExtractOp: returns the first match (or submatch group 1 if present) of a regex. Param: pattern (required). Input: Input *string. Output: Result string (empty if no match).`
+
+type StringConcatOp struct {
+	A      *string `dag:"input"`
+	B      *string `dag:"input"`
+	Result string  `dag:"output"`
+}
+
+func (op *StringConcatOp) Setup(_ *config.Params) error { return nil }
+func (op *StringConcatOp) Reset() error                 { return nil }
+func (op *StringConcatOp) Run(_ context.Context) error {
+	op.Result = *op.A + *op.B
+	log.Printf("[DEBUG] StringConcatOp: %q + %q = %q", *op.A, *op.B, op.Result)
+	return nil
+}
+
+type StringSplitOp struct {
+	Input  *string
+	Result []string
+	sep    string
+}
+
+func (op *StringSplitOp) Setup(params *config.Params) error {
+	op.sep = params.GetString("sep", ",")
+	return nil
+}
+func (op *StringSplitOp) Reset() error { return nil }
+func (op *StringSplitOp) Run(_ context.Context) error {
+	parts := strings.Split(*op.Input, op.sep)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	op.Result = out
+	log.Printf("[DEBUG] StringSplitOp: %d parts", len(op.Result))
+	return nil
+}
+func (op *StringSplitOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
+func (op *StringSplitOp) OutputFields() map[string]any { return map[string]any{"Result": &op.Result} }
+func (op *StringSplitOp) SetInputField(field string, value any) error {
+	if field != "Input" {
+		return fmt.Errorf("field %s is not defined", field)
+	}
+	val, ok := value.(*string)
+	if !ok {
+		return fmt.Errorf("field Input: expected *string, got %T", value)
+	}
+	op.Input = val
+	return nil
+}
+func (op *StringSplitOp) ResetFields() { op.Input = nil; op.Result = nil }
+
+type RegexMatchOp struct {
+	Input *string
+	Match bool
+	re    *regexp.Regexp
+}
+
+func (op *RegexMatchOp) Setup(params *config.Params) error {
+	pattern := params.GetString("pattern", "")
+	if pattern == "" {
+		return fmt.Errorf("RegexMatchOp: pattern param is required")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("RegexMatchOp: invalid pattern %q: %w", pattern, err)
+	}
+	op.re = re
+	return nil
+}
+func (op *RegexMatchOp) Reset() error { return nil }
+func (op *RegexMatchOp) Run(_ context.Context) error {
+	op.Match = op.re.MatchString(*op.Input)
+	log.Printf("[DEBUG] RegexMatchOp: match=%v", op.Match)
+	return nil
+}
+func (op *RegexMatchOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
+func (op *RegexMatchOp) OutputFields() map[string]any { return map[string]any{"Match": &op.Match} }
+func (op *RegexMatchOp) SetInputField(field string, value any) error {
+	if field != "Input" {
+		return fmt.Errorf("field %s is not defined", field)
+	}
+	val, ok := value.(*string)
+	if !ok {
+		return fmt.Errorf("field Input: expected *string, got %T", value)
+	}
+	op.Input = val
+	return nil
+}
+func (op *RegexMatchOp) ResetFields() { op.Input = nil; op.Match = false }
+
+type RegexExtractOp struct {
+	Input  *string `dag:"input"`
+	Result string  `dag:"output"`
+	re     *regexp.Regexp
+}
+
+func (op *RegexExtractOp) Setup(params *config.Params) error {
+	pattern := params.GetString("pattern", "")
+	if pattern == "" {
+		return fmt.Errorf("RegexExtractOp: pattern param is required")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("RegexExtractOp: invalid pattern %q: %w", pattern, err)
+	}
+	op.re = re
+	return nil
+}
+func (op *RegexExtractOp) Reset() error { return nil }
+func (op *RegexExtractOp) Run(_ context.Context) error {
+	m := op.re.FindStringSubmatch(*op.Input)
+	if len(m) == 0 {
+		op.Result = ""
+	} else if len(m) > 1 {
+		op.Result = m[1]
+	} else {
+		op.Result = m[0]
+	}
+	log.Printf("[DEBUG] RegexExtractOp: result=%q", op.Result)
+	return nil
+}
+
 // AIComputeStringToStringOp is the registered concrete variant of AIComputeOp
 // for string→string operations.
 type AIComputeStringToStringOp struct {
@@ -97,5 +226,9 @@ func init() {
 	operator.RegisterOp[StringConstOp]()
 	operator.RegisterOp[StringLookupOp]()
 	operator.RegisterOp[StringToLowerOp]()
+	operator.RegisterOp[StringConcatOp]()
+	operator.RegisterOp[StringSplitOp]()
+	operator.RegisterOp[RegexMatchOp]()
+	operator.RegisterOp[RegexExtractOp]()
 	operator.RegisterOp[AIComputeStringToStringOp]()
 }
