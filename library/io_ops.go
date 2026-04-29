@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 
@@ -29,7 +28,6 @@ func (op *FileReadOp) Run(_ context.Context) error {
 		return fmt.Errorf("FileReadOp: %w", err)
 	}
 	op.Content = string(data)
-	log.Printf("[DEBUG] FileReadOp: read %d bytes from %q", len(data), *op.Path)
 	return nil
 }
 
@@ -42,7 +40,6 @@ func (op *EnvOp) Setup(_ *config.Params) error { return nil }
 func (op *EnvOp) Reset() error                 { return nil }
 func (op *EnvOp) Run(_ context.Context) error {
 	op.Value = os.Getenv(*op.Name)
-	log.Printf("[DEBUG] EnvOp: %q=%q", *op.Name, op.Value)
 	return nil
 }
 
@@ -70,7 +67,6 @@ func (op *HTTPGetOp) Run(ctx context.Context) error {
 	}
 	op.Body = string(data)
 	op.StatusCode = resp.StatusCode
-	log.Printf("[DEBUG] HTTPGetOp: status=%d body_len=%d", op.StatusCode, len(op.Body))
 	return nil
 }
 func (op *HTTPGetOp) InputFields() map[string]any { return map[string]any{"URL": &op.URL} }

@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
@@ -21,7 +20,6 @@ func (op *IfStringEqOp) Setup(_ *config.Params) error { return nil }
 func (op *IfStringEqOp) Reset() error                 { return nil }
 func (op *IfStringEqOp) Run(_ context.Context) error {
 	op.Match = *op.A == *op.B
-	log.Printf("[DEBUG] IfStringEqOp: %q == %q → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 func (op *IfStringEqOp) InputFields() map[string]any {

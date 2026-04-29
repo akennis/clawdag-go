@@ -9,7 +9,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	dagailib "github.com/akennis/clawdag-go/library"
+	"github.com/wwz16/dagor"
 	_ "github.com/wwz16/dagor/operator/builtin"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -67,25 +68,6 @@ func goVersion() string {
 func (op *ValidateDAGOp) Setup(params *config.Params) error { return nil }
 func (op *ValidateDAGOp) Reset() error                      { return nil }
 func (op *ValidateDAGOp) Run(ctx context.Context) error {
-	// log.Printf("[DEBUG] ValidateDAGOp: validating generated DAG")
-	// var files map[string]string
-	// if err := json.Unmarshal([]byte(*op.GoFiles), &files); err != nil {
-	// 	op.ValidationError = fmt.Sprintf("parse GoFiles: %v", err)
-	// 	log.Printf("[DEBUG] ValidateDAGOp: %s", op.ValidationError)
-	// 	return nil
-	// }
-	// dagJSON := files["dag_json"]
-	// if dagJSON == "" {
-	// 	op.ValidationError = "dag_json field missing from generated files"
-	// 	log.Printf("[DEBUG] ValidateDAGOp: %s", op.ValidationError)
-	// 	return nil
-	// }
-	// if err := validateDAGJSON(dagJSON); err != nil {
-	// 	op.ValidationError = err.Error()
-	// 	log.Printf("[DEBUG] ValidateDAGOp: errors:\n%s", op.ValidationError)
-	// } else {
-	// 	log.Printf("[DEBUG] ValidateDAGOp: OK")
-	// }
 	return nil
 }
 
@@ -97,14 +79,14 @@ type PromptOp struct {
 func (op *PromptOp) Setup(params *config.Params) error { return nil }
 func (op *PromptOp) Reset() error                      { return nil }
 func (op *PromptOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] PromptOp: waiting for user input")
+	slog.DebugContext(ctx, "PromptOp.run", "run_id", dagor.RunID(ctx))
 	fmt.Print("Enter prompt: ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		return fmt.Errorf("reading prompt: %w", err)
 	}
 	op.Prompt = strings.TrimSpace(line)
-	log.Printf("[DEBUG] PromptOp: prompt=%q", op.Prompt)
+	slog.DebugContext(ctx, "PromptOp.done", "run_id", dagor.RunID(ctx), "prompt_len", len(op.Prompt))
 	return nil
 }
 
@@ -116,7 +98,7 @@ type LibraryScanOp struct {
 func (op *LibraryScanOp) Setup(params *config.Params) error { return nil }
 func (op *LibraryScanOp) Reset() error                      { return nil }
 func (op *LibraryScanOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] LibraryScanOp: collecting library op descriptions")
+	slog.DebugContext(ctx, "LibraryScanOp.run", "run_id", dagor.RunID(ctx))
 	op.LibraryDescription = strings.Join([]string{
 		dagailib.AddOpDescription,
 		dagailib.SubOpDescription,
@@ -129,7 +111,7 @@ func (op *LibraryScanOp) Run(ctx context.Context) error {
 		dagailib.CityTimeOpDescription,
 		dagailib.ModeSelectOpDescription,
 	}, "\n")
-	log.Printf("[DEBUG] LibraryScanOp: loaded %d ops", 10)
+	slog.DebugContext(ctx, "LibraryScanOp.done", "run_id", dagor.RunID(ctx), "op_count", 10)
 	return nil
 }
 
@@ -173,7 +155,7 @@ type DAGDesignOp struct {
 func (op *DAGDesignOp) Setup(params *config.Params) error { return nil }
 func (op *DAGDesignOp) Reset() error                      { return nil }
 func (op *DAGDesignOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] DAGDesignOp: calling Claude for design")
+	slog.DebugContext(ctx, "DAGDesignOp.run", "run_id", dagor.RunID(ctx))
 	apiKey := os.Getenv("CLAUDE_API_KEY")
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
@@ -202,7 +184,7 @@ func (op *DAGDesignOp) Run(ctx context.Context) error {
 		}
 	}
 	op.Design = strings.TrimSpace(op.Design)
-	log.Printf("[DEBUG] DAGDesignOp: received design (%d bytes)", len(op.Design))
+	slog.DebugContext(ctx, "DAGDesignOp.done", "run_id", dagor.RunID(ctx), "design_bytes", len(op.Design))
 	return nil
 }
 
@@ -218,7 +200,7 @@ type DAGDesignRefineOp struct {
 func (op *DAGDesignRefineOp) Setup(params *config.Params) error { return nil }
 func (op *DAGDesignRefineOp) Reset() error                      { return nil }
 func (op *DAGDesignRefineOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] DAGDesignRefineOp: calling Claude for refinement")
+	slog.DebugContext(ctx, "DAGDesignRefineOp.run", "run_id", dagor.RunID(ctx))
 	apiKey := os.Getenv("CLAUDE_API_KEY")
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
@@ -249,7 +231,7 @@ func (op *DAGDesignRefineOp) Run(ctx context.Context) error {
 		}
 	}
 	op.Design = strings.TrimSpace(op.Design)
-	log.Printf("[DEBUG] DAGDesignRefineOp: received refined design (%d bytes)", len(op.Design))
+	slog.DebugContext(ctx, "DAGDesignRefineOp.done", "run_id", dagor.RunID(ctx), "design_bytes", len(op.Design))
 	return nil
 }
 
@@ -264,7 +246,7 @@ type GenerateOp struct {
 func (op *GenerateOp) Setup(params *config.Params) error { return nil }
 func (op *GenerateOp) Reset() error                      { return nil }
 func (op *GenerateOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] GenerateOp: calling Claude")
+	slog.DebugContext(ctx, "GenerateOp.run", "run_id", dagor.RunID(ctx))
 	apiKey := os.Getenv("CLAUDE_API_KEY")
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
@@ -303,7 +285,7 @@ func (op *GenerateOp) Run(ctx context.Context) error {
 		return fmt.Errorf("generated output does not look like Go source\nraw: %s", raw)
 	}
 	op.GoFiles = raw
-	log.Printf("[DEBUG] GenerateOp: received main_go (%d bytes)", len(raw))
+	slog.DebugContext(ctx, "GenerateOp.done", "run_id", dagor.RunID(ctx), "bytes", len(raw))
 	return nil
 }
 
@@ -328,7 +310,7 @@ func (op *WriteFilesOp) Run(ctx context.Context) error {
 		return fmt.Errorf("UserHomeDir: %w", err)
 	}
 	tmpDir := filepath.Join(home, ".dag-ai", "solution")
-	log.Printf("[DEBUG] WriteFilesOp: preparing dir %s", tmpDir)
+	slog.DebugContext(ctx, "WriteFilesOp.prepare", "run_id", dagor.RunID(ctx), "dir", tmpDir)
 
 	// Wipe and recreate so each attempt starts clean
 	if err := os.RemoveAll(tmpDir); err != nil {
@@ -342,19 +324,19 @@ func (op *WriteFilesOp) Run(ctx context.Context) error {
 	modPath := filepath.ToSlash(op.dagAIModulePath)
 	dagorPath := filepath.ToSlash(filepath.Join(filepath.Dir(op.dagAIModulePath), "dagor"))
 	goMod := fmt.Sprintf("module solution\n\ngo %s\n\nrequire github.com/akennis/clawdag-go v0.0.0\n\nreplace github.com/akennis/clawdag-go => %s\nreplace github.com/wwz16/dagor => %s\n", goVersion(), modPath, dagorPath)
-	log.Printf("[DEBUG] WriteFilesOp: writing go.mod (replace github.com/akennis/clawdag-go => %s, github.com/wwz16/dagor => %s)", modPath, dagorPath)
+	slog.DebugContext(ctx, "WriteFilesOp.go_mod", "run_id", dagor.RunID(ctx), "mod_path", modPath, "dagor_path", dagorPath)
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
 		return fmt.Errorf("write go.mod: %w", err)
 	}
 
 	// Write main.go from AI
-	log.Printf("[DEBUG] WriteFilesOp: writing main.go (%d bytes)", len(mainGo))
+	slog.DebugContext(ctx, "WriteFilesOp.main_go", "run_id", dagor.RunID(ctx), "bytes", len(mainGo))
 	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(mainGo), 0644); err != nil {
 		return fmt.Errorf("write main.go: %w", err)
 	}
 
 	// Run go mod tidy to bootstrap go.sum
-	log.Printf("[DEBUG] WriteFilesOp: running go mod tidy")
+	slog.DebugContext(ctx, "WriteFilesOp.tidy", "run_id", dagor.RunID(ctx))
 	tidy := exec.CommandContext(ctx, "go", "mod", "tidy")
 	tidy.Dir = tmpDir
 	tidy.Env = os.Environ()
@@ -363,7 +345,7 @@ func (op *WriteFilesOp) Run(ctx context.Context) error {
 	}
 
 	op.TempDir = tmpDir
-	log.Printf("[DEBUG] WriteFilesOp: done, solution written to %s", tmpDir)
+	slog.DebugContext(ctx, "WriteFilesOp.done", "run_id", dagor.RunID(ctx), "dir", tmpDir)
 	return nil
 }
 
@@ -377,7 +359,7 @@ type CodegenOp struct {
 func (op *CodegenOp) Setup(params *config.Params) error { return nil }
 func (op *CodegenOp) Reset() error                      { return nil }
 func (op *CodegenOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] CodegenOp: running go generate in %s", *op.TempDir)
+	slog.DebugContext(ctx, "CodegenOp.run", "run_id", dagor.RunID(ctx), "dir", *op.TempDir)
 	cmd := exec.CommandContext(ctx, "go", "generate", "./...")
 	cmd.Dir = *op.TempDir
 	cmd.Env = os.Environ()
@@ -386,9 +368,9 @@ func (op *CodegenOp) Run(ctx context.Context) error {
 	if err := cmd.Run(); err != nil {
 		op.ExitCode = 1
 		op.Stderr = errBuf.String()
-		log.Printf("[DEBUG] CodegenOp: exit_code=1 stderr=%q", op.Stderr)
+		slog.DebugContext(ctx, "CodegenOp.failed", "run_id", dagor.RunID(ctx), "stderr", op.Stderr)
 	} else {
-		log.Printf("[DEBUG] CodegenOp: exit_code=0")
+		slog.DebugContext(ctx, "CodegenOp.done", "run_id", dagor.RunID(ctx))
 	}
 	return nil
 }
@@ -404,7 +386,7 @@ type CompileOp struct {
 func (op *CompileOp) Setup(params *config.Params) error { return nil }
 func (op *CompileOp) Reset() error                      { return nil }
 func (op *CompileOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] CompileOp: compiling solution in %s", *op.TempDir)
+	slog.DebugContext(ctx, "CompileOp.run", "run_id", dagor.RunID(ctx), "dir", *op.TempDir)
 	binName := "solution_bin"
 	if runtime.GOOS == "windows" {
 		binName += ".exe"
@@ -420,12 +402,12 @@ func (op *CompileOp) Run(ctx context.Context) error {
 		op.BinPath = "COMPILE_FAILED"
 		op.ExitCode = 1
 		op.Stderr = errBuf.String()
-		log.Printf("[DEBUG] CompileOp: FAILED stderr=%q", op.Stderr)
+		slog.DebugContext(ctx, "CompileOp.failed", "run_id", dagor.RunID(ctx), "stderr", op.Stderr)
 		return nil
 	}
 
 	op.BinPath = binPath
-	log.Printf("[DEBUG] CompileOp: OK bin=%s", binPath)
+	slog.DebugContext(ctx, "CompileOp.done", "run_id", dagor.RunID(ctx), "bin", binPath)
 	return nil
 }
 
@@ -447,11 +429,11 @@ func (op *RunOp) Run(ctx context.Context) error {
 		if op.Stderr == "" {
 			op.Stderr = "binary not available"
 		}
-		log.Printf("[DEBUG] RunOp: skipped (compile failed): %s", op.Stderr)
+		slog.DebugContext(ctx, "RunOp.skipped", "run_id", dagor.RunID(ctx), "reason", op.Stderr)
 		return nil
 	}
 
-	log.Printf("[DEBUG] RunOp: executing %s", *op.BinPath)
+	slog.DebugContext(ctx, "RunOp.run", "run_id", dagor.RunID(ctx), "bin", *op.BinPath)
 	cmd := exec.CommandContext(ctx, *op.BinPath)
 	cmd.Env = os.Environ()
 	var outBuf, errBuf strings.Builder
@@ -462,9 +444,9 @@ func (op *RunOp) Run(ctx context.Context) error {
 	}
 	op.Stdout = outBuf.String()
 	op.Stderr = errBuf.String()
-	log.Printf("[DEBUG] RunOp: exit_code=%d stdout_len=%d stderr_len=%d", op.ExitCode, len(op.Stdout), len(op.Stderr))
+	slog.DebugContext(ctx, "RunOp.done", "run_id", dagor.RunID(ctx), "exit_code", op.ExitCode, "stdout_len", len(op.Stdout), "stderr_len", len(op.Stderr))
 	if op.Stderr != "" {
-		log.Printf("[DEBUG] RunOp: stderr=%q", op.Stderr)
+		slog.DebugContext(ctx, "RunOp.stderr", "run_id", dagor.RunID(ctx), "stderr", op.Stderr)
 	}
 	return nil
 }
@@ -482,21 +464,21 @@ type OutputOp struct {
 func (op *OutputOp) Setup(params *config.Params) error { return nil }
 func (op *OutputOp) Reset() error                      { return nil }
 func (op *OutputOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] OutputOp: exit_code=%d stdout_len=%d stderr_len=%d", *op.ExitCode, len(*op.RawStdout), len(*op.RawStderr))
+	slog.DebugContext(ctx, "OutputOp.run", "run_id", dagor.RunID(ctx), "exit_code", *op.ExitCode, "stdout_len", len(*op.RawStdout), "stderr_len", len(*op.RawStderr))
 
 	if *op.ExitCode != 0 {
 		op.ErrorMsg = *op.RawStderr
 		if op.ErrorMsg == "" {
 			op.ErrorMsg = "run failed with no stderr"
 		}
-		log.Printf("[DEBUG] OutputOp: non-zero exit: %s", op.ErrorMsg)
+		slog.DebugContext(ctx, "OutputOp.nonzero_exit", "run_id", dagor.RunID(ctx), "error_msg", op.ErrorMsg)
 		return nil
 	}
 
 	stdout := strings.TrimSpace(*op.RawStdout)
 	if stdout == "" {
 		op.ErrorMsg = fmt.Sprintf("empty stdout; stderr: %s", *op.RawStderr)
-		log.Printf("[DEBUG] OutputOp: empty stdout")
+		slog.DebugContext(ctx, "OutputOp.empty_stdout", "run_id", dagor.RunID(ctx))
 		return nil
 	}
 
@@ -504,7 +486,7 @@ func (op *OutputOp) Run(ctx context.Context) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
 		op.ErrorMsg = fmt.Sprintf("parse output JSON: %v\nstdout: %s", err, stdout)
-		log.Printf("[DEBUG] OutputOp: JSON parse error: %v", err)
+		slog.DebugContext(ctx, "OutputOp.json_error", "run_id", dagor.RunID(ctx), "err", err)
 		return nil
 	}
 
@@ -517,7 +499,7 @@ func (op *OutputOp) Run(ctx context.Context) error {
 			var n json.Number
 			if err2 := json.Unmarshal(r, &n); err2 == nil {
 				op.Result = n.String()
-				log.Printf("[DEBUG] OutputOp: result was numeric, coerced to string: %s", op.Result)
+				slog.DebugContext(ctx, "OutputOp.numeric_coerce", "run_id", dagor.RunID(ctx), "result", op.Result)
 			}
 		}
 	}
@@ -532,11 +514,11 @@ func (op *OutputOp) Run(ctx context.Context) error {
 
 	if op.Result == "" {
 		op.ErrorMsg = fmt.Sprintf("result field missing or empty in output; stdout: %s", stdout)
-		log.Printf("[DEBUG] OutputOp: result empty after parse")
+		slog.DebugContext(ctx, "OutputOp.result_empty", "run_id", dagor.RunID(ctx))
 		return nil
 	}
 
-	log.Printf("[DEBUG] OutputOp: result=%q ai_nodes=%s", op.Result, op.AINodes)
+	slog.DebugContext(ctx, "OutputOp.done", "run_id", dagor.RunID(ctx), "result", op.Result, "ai_nodes", op.AINodes)
 	return nil
 }
 
@@ -571,7 +553,7 @@ func (op *FallbackOp) Run(ctx context.Context) error {
 
 	if compileOK && validationOK {
 		op.BinPath = *op.InitialBinPath
-		log.Printf("[DEBUG] FallbackOp: compile succeeded and DAG valid, passthrough bin=%s", op.BinPath)
+		slog.DebugContext(ctx, "FallbackOp.passthrough", "run_id", dagor.RunID(ctx), "bin", op.BinPath)
 		return nil
 	}
 
@@ -582,13 +564,13 @@ func (op *FallbackOp) Run(ctx context.Context) error {
 	// compile errors that stem from it, so we don't send both at once.
 	var errorContext string
 	if !validationOK {
-		log.Printf("[DEBUG] FallbackOp: DAG validation failed, generating fallback code")
+		slog.DebugContext(ctx, "FallbackOp.dag_invalid", "run_id", dagor.RunID(ctx))
 		errorContext = strings.NewReplacer(
 			"{{VALIDATION_ERROR}}", *op.ValidationError,
 			"{{GENERATED_CODE}}", originalCode,
 		).Replace(dagValidationErrorContextTemplate)
 	} else {
-		log.Printf("[DEBUG] FallbackOp: initial compile failed, generating fallback code")
+		slog.DebugContext(ctx, "FallbackOp.compile_failed", "run_id", dagor.RunID(ctx))
 		errorContext = strings.NewReplacer(
 			"{{COMPILE_ERROR}}", *op.CompileStderr,
 			"{{GENERATED_CODE}}", originalCode,
@@ -633,7 +615,7 @@ func (op *FallbackOp) Run(ctx context.Context) error {
 	if !strings.HasPrefix(raw, "package ") {
 		return fmt.Errorf("fallback: output does not look like Go source\nraw: %s", raw)
 	}
-	log.Printf("[DEBUG] FallbackOp: received fallback main_go (%d bytes)", len(raw))
+	slog.DebugContext(ctx, "FallbackOp.generated", "run_id", dagor.RunID(ctx), "bytes", len(raw))
 
 	// Write fallback files to a separate directory so the initial solution is not clobbered.
 	home, err := os.UserHomeDir()
@@ -658,13 +640,13 @@ func (op *FallbackOp) Run(ctx context.Context) error {
 		return fmt.Errorf("write fallback main.go: %w", err)
 	}
 
-	log.Printf("[DEBUG] FallbackOp: gofmt syntax check")
+	slog.DebugContext(ctx, "FallbackOp.gofmt", "run_id", dagor.RunID(ctx))
 	fmtCmd := exec.CommandContext(ctx, "gofmt", "-e", filepath.Join(fallbackDir, "main.go"))
 	if out, err := fmtCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("fallback syntax error in main.go:\n%s", out)
 	}
 
-	log.Printf("[DEBUG] FallbackOp: running go mod tidy")
+	slog.DebugContext(ctx, "FallbackOp.tidy", "run_id", dagor.RunID(ctx))
 	tidy := exec.CommandContext(ctx, "go", "mod", "tidy")
 	tidy.Dir = fallbackDir
 	tidy.Env = os.Environ()
@@ -688,7 +670,7 @@ func (op *FallbackOp) Run(ctx context.Context) error {
 	}
 
 	op.BinPath = binPath
-	log.Printf("[DEBUG] FallbackOp: fallback compile OK, bin=%s", op.BinPath)
+	slog.DebugContext(ctx, "FallbackOp.done", "run_id", dagor.RunID(ctx), "bin", op.BinPath)
 	return nil
 }
 
@@ -709,7 +691,7 @@ type EnvScanOp struct {
 func (op *EnvScanOp) Setup(params *config.Params) error { return nil }
 func (op *EnvScanOp) Reset() error                      { return nil }
 func (op *EnvScanOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] EnvScanOp: scanning generated Go source for env vars")
+	slog.DebugContext(ctx, "EnvScanOp.run", "run_id", dagor.RunID(ctx))
 	src := *op.GoFiles
 
 	knownDescriptions := map[string]EnvVarSpec{
@@ -753,30 +735,30 @@ func (op *EnvScanOp) Run(ctx context.Context) error {
 		return fmt.Errorf("EnvScanOp marshal: %w", err)
 	}
 	op.RequiredEnvVars = string(b)
-	log.Printf("[DEBUG] EnvScanOp: found %d env vars", len(specs))
+	slog.DebugContext(ctx, "EnvScanOp.done", "run_id", dagor.RunID(ctx), "env_var_count", len(specs))
 	return nil
 }
 
 // MCPBManifestAIOp calls Claude to generate MCPB manifest field defaults from the original
 // prompt and approved DAG design. It outputs three fields as parsed from a single CSV line.
 type MCPBManifestAIOp struct {
-	Prompt          *string `dag:"input"`
-	ApprovedDesign  *string `dag:"input"`
-	BinPath         *string `dag:"input"`
-	Name            string  `dag:"output"`
-	DisplayName     string  `dag:"output"`
-	Description     string  `dag:"output"`
+	Prompt         *string `dag:"input"`
+	ApprovedDesign *string `dag:"input"`
+	BinPath        *string `dag:"input"`
+	Name           string  `dag:"output"`
+	DisplayName    string  `dag:"output"`
+	Description    string  `dag:"output"`
 }
 
 func (op *MCPBManifestAIOp) Setup(params *config.Params) error { return nil }
 func (op *MCPBManifestAIOp) Reset() error                      { return nil }
 func (op *MCPBManifestAIOp) Run(ctx context.Context) error {
 	if *op.BinPath == "COMPILE_FAILED" || *op.BinPath == "" {
-		log.Printf("[DEBUG] MCPBManifestAIOp: skipped (compile failed or no bin)")
+		slog.DebugContext(ctx, "MCPBManifestAIOp.skipped", "run_id", dagor.RunID(ctx))
 		return nil
 	}
 
-	log.Printf("[DEBUG] MCPBManifestAIOp: calling Claude for manifest metadata")
+	slog.DebugContext(ctx, "MCPBManifestAIOp.run", "run_id", dagor.RunID(ctx))
 	apiKey := os.Getenv("CLAUDE_API_KEY")
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
@@ -810,14 +792,14 @@ func (op *MCPBManifestAIOp) Run(ctx context.Context) error {
 	r := csv.NewReader(strings.NewReader(raw))
 	fields, err := r.Read()
 	if err != nil || len(fields) < 3 {
-		log.Printf("[DEBUG] MCPBManifestAIOp: CSV parse failed (%v), raw=%q", err, raw)
+		slog.DebugContext(ctx, "MCPBManifestAIOp.csv_error", "run_id", dagor.RunID(ctx), "err", err, "raw", raw)
 		return nil
 	}
 
 	op.Name = strings.TrimSpace(fields[0])
 	op.DisplayName = strings.TrimSpace(fields[1])
 	op.Description = strings.TrimSpace(fields[2])
-	log.Printf("[DEBUG] MCPBManifestAIOp: name=%q display=%q", op.Name, op.DisplayName)
+	slog.DebugContext(ctx, "MCPBManifestAIOp.done", "run_id", dagor.RunID(ctx), "name", op.Name, "display", op.DisplayName)
 	return nil
 }
 
@@ -841,7 +823,7 @@ func (op *MCPBManifestPromptOp) Setup(params *config.Params) error { return nil 
 func (op *MCPBManifestPromptOp) Reset() error                      { return nil }
 func (op *MCPBManifestPromptOp) Run(ctx context.Context) error {
 	if *op.BinPath == "COMPILE_FAILED" || *op.BinPath == "" {
-		log.Printf("[DEBUG] MCPBManifestPromptOp: skipped (compile failed or no bin)")
+		slog.DebugContext(ctx, "MCPBManifestPromptOp.skipped", "run_id", dagor.RunID(ctx))
 		return nil
 	}
 
@@ -928,7 +910,7 @@ func (op *MCPBManifestPromptOp) Run(ctx context.Context) error {
 	op.Description = readField("Description", defaultDesc)
 	op.Author = readField("Author", "")
 
-	log.Printf("[DEBUG] MCPBManifestPromptOp: name=%q display=%q author=%q", op.Name, op.DisplayName, op.Author)
+	slog.DebugContext(ctx, "MCPBManifestPromptOp.done", "run_id", dagor.RunID(ctx), "name", op.Name, "display", op.DisplayName, "author", op.Author)
 	return nil
 }
 
@@ -947,14 +929,14 @@ func (op *PackageMCPBOp) Setup(params *config.Params) error { return nil }
 func (op *PackageMCPBOp) Reset() error                      { return nil }
 func (op *PackageMCPBOp) Run(ctx context.Context) error {
 	if *op.BinPath == "COMPILE_FAILED" || *op.BinPath == "" {
-		log.Printf("[DEBUG] PackageMCPBOp: skipped (compile failed or no bin)")
+		slog.DebugContext(ctx, "PackageMCPBOp.skipped", "run_id", dagor.RunID(ctx))
 		return nil
 	}
 
 	var specs []EnvVarSpec
 	if op.RequiredEnvVars != nil && *op.RequiredEnvVars != "" {
 		if err := json.Unmarshal([]byte(*op.RequiredEnvVars), &specs); err != nil {
-			log.Printf("[DEBUG] PackageMCPBOp: failed to parse RequiredEnvVars: %v", err)
+			slog.DebugContext(ctx, "PackageMCPBOp.env_parse_error", "run_id", dagor.RunID(ctx), "err", err)
 		}
 	}
 
@@ -1068,6 +1050,6 @@ func (op *PackageMCPBOp) Run(ctx context.Context) error {
 	}
 
 	op.MCPBPath = outPath
-	log.Printf("[DEBUG] PackageMCPBOp: written to %s (%d bytes)", outPath, zipBuf.Len())
+	slog.DebugContext(ctx, "PackageMCPBOp.done", "run_id", dagor.RunID(ctx), "path", outPath, "bytes", zipBuf.Len())
 	return nil
 }

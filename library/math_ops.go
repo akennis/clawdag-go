@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 
 	"github.com/wwz16/dagor/config"
@@ -30,9 +29,8 @@ type AddOp struct {
 
 func (op *AddOp) Setup(params *config.Params) error { return nil }
 func (op *AddOp) Reset() error                      { return nil }
-func (op *AddOp) Run(ctx context.Context) error {
+func (op *AddOp) Run(_ context.Context) error {
 	op.Result = *op.A + *op.B
-	log.Printf("[DEBUG] AddOp: %v + %v = %v", *op.A, *op.B, op.Result)
 	return nil
 }
 
@@ -44,9 +42,8 @@ type SubOp struct {
 
 func (op *SubOp) Setup(params *config.Params) error { return nil }
 func (op *SubOp) Reset() error                      { return nil }
-func (op *SubOp) Run(ctx context.Context) error {
+func (op *SubOp) Run(_ context.Context) error {
 	op.Result = *op.A - *op.B
-	log.Printf("[DEBUG] SubOp: %v - %v = %v", *op.A, *op.B, op.Result)
 	return nil
 }
 
@@ -58,12 +55,11 @@ type DivOp struct {
 
 func (op *DivOp) Setup(params *config.Params) error { return nil }
 func (op *DivOp) Reset() error                      { return nil }
-func (op *DivOp) Run(ctx context.Context) error {
+func (op *DivOp) Run(_ context.Context) error {
 	if *op.B == 0 {
 		return fmt.Errorf("division by zero")
 	}
 	op.Result = *op.A / *op.B
-	log.Printf("[DEBUG] DivOp: %v / %v = %v", *op.A, *op.B, op.Result)
 	return nil
 }
 
@@ -83,9 +79,8 @@ type PackMathOperandsOp struct {
 
 func (op *PackMathOperandsOp) Setup(params *config.Params) error { return nil }
 func (op *PackMathOperandsOp) Reset() error                      { return nil }
-func (op *PackMathOperandsOp) Run(ctx context.Context) error {
+func (op *PackMathOperandsOp) Run(_ context.Context) error {
 	op.Result = MathOperands{A: *op.A, B: *op.B}
-	log.Printf("[DEBUG] PackMathOperandsOp: A=%v B=%v", op.Result.A, op.Result.B)
 	return nil
 }
 
@@ -112,7 +107,6 @@ func (op *MulOp) Setup(_ *config.Params) error { return nil }
 func (op *MulOp) Reset() error                 { return nil }
 func (op *MulOp) Run(_ context.Context) error {
 	op.Result = *op.A * *op.B
-	log.Printf("[DEBUG] MulOp: %v * %v = %v", *op.A, *op.B, op.Result)
 	return nil
 }
 
@@ -125,7 +119,6 @@ func (op *RoundOp) Setup(_ *config.Params) error { return nil }
 func (op *RoundOp) Reset() error                 { return nil }
 func (op *RoundOp) Run(_ context.Context) error {
 	op.Result = math.Round(*op.Value)
-	log.Printf("[DEBUG] RoundOp: round(%v) = %v", *op.Value, op.Result)
 	return nil
 }
 
@@ -146,7 +139,6 @@ func (op *ClampOp) Run(_ context.Context) error {
 		v = *op.Max
 	}
 	op.Result = v
-	log.Printf("[DEBUG] ClampOp: clamp(%v,[%v,%v]) = %v", *op.Value, *op.Min, *op.Max, op.Result)
 	return nil
 }
 
@@ -163,7 +155,6 @@ func (op *SumOp) Run(_ context.Context) error {
 		sum += v
 	}
 	op.Result = sum
-	log.Printf("[DEBUG] SumOp: sum=%v", op.Result)
 	return nil
 }
 func (op *SumOp) InputFields() map[string]any { return map[string]any{"Values": &op.Values} }
@@ -199,7 +190,6 @@ func (op *MinOp) Run(_ context.Context) error {
 		}
 	}
 	op.Result = m
-	log.Printf("[DEBUG] MinOp: min=%v", op.Result)
 	return nil
 }
 func (op *MinOp) InputFields() map[string]any { return map[string]any{"Values": &op.Values} }
@@ -235,7 +225,6 @@ func (op *MaxOp) Run(_ context.Context) error {
 		}
 	}
 	op.Result = m
-	log.Printf("[DEBUG] MaxOp: max=%v", op.Result)
 	return nil
 }
 func (op *MaxOp) InputFields() map[string]any { return map[string]any{"Values": &op.Values} }

@@ -3,13 +3,14 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
 )
@@ -59,7 +60,7 @@ func (op *ModeSelectOp) Setup(params *config.Params) error {
 func (op *ModeSelectOp) Reset() error { return nil }
 
 func (op *ModeSelectOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] ModeSelectOp: classifying %q into %v", *op.Input, op.categories)
+	slog.DebugContext(ctx, "ModeSelectOp.run", "run_id", dagor.RunID(ctx), "categories", op.categories)
 
 	apiKey := os.Getenv("CLAUDE_API_KEY")
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
@@ -93,6 +94,7 @@ func (op *ModeSelectOp) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
+		slog.InfoContext(ctx, "ModeSelectOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
 
 		var raw string
 		for _, block := range msg.Content {
@@ -105,11 +107,10 @@ func (op *ModeSelectOp) Run(ctx context.Context) error {
 		if !catSet[result] {
 			lastErr = fmt.Sprintf("result %q is not one of %v", result, op.categories)
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious result %q was invalid — must be exactly one of: %s.", result, catList)
-			log.Printf("[DEBUG] ModeSelectOp: attempt %d invalid category: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "ModeSelectOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 		op.Result = result
-		log.Printf("[DEBUG] ModeSelectOp: result=%q", op.Result)
 		return nil
 	}
 	return fmt.Errorf("ModeSelectOp: all %d attempts failed; last error: %s", op.maxRetries+1, lastErr)

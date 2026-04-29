@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 
@@ -31,7 +30,6 @@ func (op *IfFloatGtOp) Setup(_ *config.Params) error { return nil }
 func (op *IfFloatGtOp) Reset() error                 { return nil }
 func (op *IfFloatGtOp) Run(_ context.Context) error {
 	op.Match = *op.A > *op.B
-	log.Printf("[DEBUG] IfFloatGtOp: %v > %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -45,7 +43,6 @@ func (op *IfFloatLtOp) Setup(_ *config.Params) error { return nil }
 func (op *IfFloatLtOp) Reset() error                 { return nil }
 func (op *IfFloatLtOp) Run(_ context.Context) error {
 	op.Match = *op.A < *op.B
-	log.Printf("[DEBUG] IfFloatLtOp: %v < %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -59,7 +56,6 @@ func (op *IfFloatEqOp) Setup(_ *config.Params) error { return nil }
 func (op *IfFloatEqOp) Reset() error                 { return nil }
 func (op *IfFloatEqOp) Run(_ context.Context) error {
 	op.Match = *op.A == *op.B
-	log.Printf("[DEBUG] IfFloatEqOp: %v == %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -73,7 +69,6 @@ func (op *IfFloatGeOp) Setup(_ *config.Params) error { return nil }
 func (op *IfFloatGeOp) Reset() error                 { return nil }
 func (op *IfFloatGeOp) Run(_ context.Context) error {
 	op.Match = *op.A >= *op.B
-	log.Printf("[DEBUG] IfFloatGeOp: %v >= %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -87,7 +82,6 @@ func (op *IfFloatLeOp) Setup(_ *config.Params) error { return nil }
 func (op *IfFloatLeOp) Reset() error                 { return nil }
 func (op *IfFloatLeOp) Run(_ context.Context) error {
 	op.Match = *op.A <= *op.B
-	log.Printf("[DEBUG] IfFloatLeOp: %v <= %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -111,7 +105,6 @@ func (op *IfIntGtOp) Setup(_ *config.Params) error { return nil }
 func (op *IfIntGtOp) Reset() error                 { return nil }
 func (op *IfIntGtOp) Run(_ context.Context) error {
 	op.Match = *op.A > *op.B
-	log.Printf("[DEBUG] IfIntGtOp: %v > %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -125,7 +118,6 @@ func (op *IfIntLtOp) Setup(_ *config.Params) error { return nil }
 func (op *IfIntLtOp) Reset() error                 { return nil }
 func (op *IfIntLtOp) Run(_ context.Context) error {
 	op.Match = *op.A < *op.B
-	log.Printf("[DEBUG] IfIntLtOp: %v < %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -139,7 +131,6 @@ func (op *IfIntEqOp) Setup(_ *config.Params) error { return nil }
 func (op *IfIntEqOp) Reset() error                 { return nil }
 func (op *IfIntEqOp) Run(_ context.Context) error {
 	op.Match = *op.A == *op.B
-	log.Printf("[DEBUG] IfIntEqOp: %v == %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -153,7 +144,6 @@ func (op *IfIntGeOp) Setup(_ *config.Params) error { return nil }
 func (op *IfIntGeOp) Reset() error                 { return nil }
 func (op *IfIntGeOp) Run(_ context.Context) error {
 	op.Match = *op.A >= *op.B
-	log.Printf("[DEBUG] IfIntGeOp: %v >= %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -167,7 +157,6 @@ func (op *IfIntLeOp) Setup(_ *config.Params) error { return nil }
 func (op *IfIntLeOp) Reset() error                 { return nil }
 func (op *IfIntLeOp) Run(_ context.Context) error {
 	op.Match = *op.A <= *op.B
-	log.Printf("[DEBUG] IfIntLeOp: %v <= %v → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -190,7 +179,6 @@ func (op *IfStringContainsOp) Setup(_ *config.Params) error { return nil }
 func (op *IfStringContainsOp) Reset() error                 { return nil }
 func (op *IfStringContainsOp) Run(_ context.Context) error {
 	op.Match = strings.Contains(*op.A, *op.B)
-	log.Printf("[DEBUG] IfStringContainsOp: contains(%q,%q) → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -204,7 +192,6 @@ func (op *IfStringHasPrefixOp) Setup(_ *config.Params) error { return nil }
 func (op *IfStringHasPrefixOp) Reset() error                 { return nil }
 func (op *IfStringHasPrefixOp) Run(_ context.Context) error {
 	op.Match = strings.HasPrefix(*op.A, *op.B)
-	log.Printf("[DEBUG] IfStringHasPrefixOp: hasPrefix(%q,%q) → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -218,7 +205,6 @@ func (op *IfStringHasSuffixOp) Setup(_ *config.Params) error { return nil }
 func (op *IfStringHasSuffixOp) Reset() error                 { return nil }
 func (op *IfStringHasSuffixOp) Run(_ context.Context) error {
 	op.Match = strings.HasSuffix(*op.A, *op.B)
-	log.Printf("[DEBUG] IfStringHasSuffixOp: hasSuffix(%q,%q) → %v", *op.A, *op.B, op.Match)
 	return nil
 }
 
@@ -246,7 +232,6 @@ func (op *IfStringRegexMatchOp) Setup(params *config.Params) error {
 func (op *IfStringRegexMatchOp) Reset() error { return nil }
 func (op *IfStringRegexMatchOp) Run(_ context.Context) error {
 	op.Match = op.re.MatchString(*op.Input)
-	log.Printf("[DEBUG] IfStringRegexMatchOp: match=%v", op.Match)
 	return nil
 }
 func (op *IfStringRegexMatchOp) InputFields() map[string]any {
@@ -285,7 +270,6 @@ func (op *IfEmptyStringOp) Setup(_ *config.Params) error { return nil }
 func (op *IfEmptyStringOp) Reset() error                 { return nil }
 func (op *IfEmptyStringOp) Run(_ context.Context) error {
 	op.Match = op.Value == nil || *op.Value == ""
-	log.Printf("[DEBUG] IfEmptyStringOp: empty=%v", op.Match)
 	return nil
 }
 
@@ -298,7 +282,6 @@ func (op *IfEmptySliceStringOp) Setup(_ *config.Params) error { return nil }
 func (op *IfEmptySliceStringOp) Reset() error                 { return nil }
 func (op *IfEmptySliceStringOp) Run(_ context.Context) error {
 	op.Match = op.Value == nil || len(*op.Value) == 0
-	log.Printf("[DEBUG] IfEmptySliceStringOp: empty=%v", op.Match)
 	return nil
 }
 func (op *IfEmptySliceStringOp) InputFields() map[string]any {
@@ -329,7 +312,6 @@ func (op *IfEmptySliceFloat64Op) Setup(_ *config.Params) error { return nil }
 func (op *IfEmptySliceFloat64Op) Reset() error                 { return nil }
 func (op *IfEmptySliceFloat64Op) Run(_ context.Context) error {
 	op.Match = op.Value == nil || len(*op.Value) == 0
-	log.Printf("[DEBUG] IfEmptySliceFloat64Op: empty=%v", op.Match)
 	return nil
 }
 func (op *IfEmptySliceFloat64Op) InputFields() map[string]any {
@@ -369,7 +351,6 @@ func (op *BetweenFloatOp) Reset() error                 { return nil }
 func (op *BetweenFloatOp) Run(_ context.Context) error {
 	v := *op.Value
 	op.Match = v >= *op.Min && v <= *op.Max
-	log.Printf("[DEBUG] BetweenFloatOp: %v in [%v,%v] → %v", v, *op.Min, *op.Max, op.Match)
 	return nil
 }
 

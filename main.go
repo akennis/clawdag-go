@@ -10,11 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/graph"
 	"github.com/wwz16/dagor/operator"
+	"github.com/wwz16/dagor/reporter"
 )
 
 // buildDesignDAG constructs the Phase 1 DAG: PromptOp + LibraryScanOp + DAGDesignOp.
@@ -186,12 +189,15 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
 	defer cancel()
 
+	slogLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	slog.SetDefault(slogLogger)
+
 	// ── Phase 1: Design ──────────────────────────────────────────────────────────
 	designDAG, err := buildDesignDAG()
 	if err != nil {
 		log.Fatalf("buildDesignDAG: %v", err)
 	}
-	eng1, err := dagor.NewEngine(designDAG, pool)
+	eng1, err := dagor.NewEngine(designDAG, pool, dagor.WithReporter(reporter.New(slogLogger)))
 	if err != nil {
 		log.Fatalf("NewEngine (design): %v", err)
 	}
@@ -230,7 +236,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("buildRefineDAG: %v", err)
 		}
-		eng2, err := dagor.NewEngine(refineDAG, pool)
+		eng2, err := dagor.NewEngine(refineDAG, pool, dagor.WithReporter(reporter.New(slogLogger)))
 		if err != nil {
 			log.Fatalf("NewEngine (refine): %v", err)
 		}
@@ -251,7 +257,7 @@ func main() {
 	for name := range codegenDAG.Vertices() {
 		log.Printf("[DEBUG]   vertex: %s", name)
 	}
-	eng3, err := dagor.NewEngine(codegenDAG, pool)
+	eng3, err := dagor.NewEngine(codegenDAG, pool, dagor.WithReporter(reporter.New(slogLogger)))
 	if err != nil {
 		log.Fatalf("NewEngine (codegen): %v", err)
 	}

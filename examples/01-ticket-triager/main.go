@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
+	"github.com/wwz16/dagor/reporter"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/graph"
 	"github.com/wwz16/dagor/operator"
@@ -450,6 +452,7 @@ func main() {
 	var ticketPath string
 	flag.StringVar(&ticketPath, "ticket", "", "path to a ticket text file")
 	flag.Parse()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	if ticketPath == "" {
 		fmt.Fprintln(os.Stderr, "usage: 01-ticket-triager --ticket <file>")
@@ -477,7 +480,7 @@ func main() {
 	}
 	defer pool.Release()
 
-	eng, err := dagor.NewEngine(g, pool)
+	eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
 	if err != nil {
 		log.Fatalf("create engine: %v", err)
 	}

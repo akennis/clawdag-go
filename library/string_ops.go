@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 
@@ -48,7 +47,6 @@ func (op *StringLookupOp) Run(ctx context.Context) error {
 		return nil
 	}
 	op.Result = op.entries[*op.Key]
-	log.Printf("[DEBUG] StringLookupOp: key=%q result=%q", *op.Key, op.Result)
 	return nil
 }
 
@@ -84,7 +82,6 @@ func (op *StringConcatOp) Setup(_ *config.Params) error { return nil }
 func (op *StringConcatOp) Reset() error                 { return nil }
 func (op *StringConcatOp) Run(_ context.Context) error {
 	op.Result = *op.A + *op.B
-	log.Printf("[DEBUG] StringConcatOp: %q + %q = %q", *op.A, *op.B, op.Result)
 	return nil
 }
 
@@ -108,7 +105,6 @@ func (op *StringSplitOp) Run(_ context.Context) error {
 		}
 	}
 	op.Result = out
-	log.Printf("[DEBUG] StringSplitOp: %d parts", len(op.Result))
 	return nil
 }
 func (op *StringSplitOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
@@ -147,7 +143,6 @@ func (op *RegexMatchOp) Setup(params *config.Params) error {
 func (op *RegexMatchOp) Reset() error { return nil }
 func (op *RegexMatchOp) Run(_ context.Context) error {
 	op.Match = op.re.MatchString(*op.Input)
-	log.Printf("[DEBUG] RegexMatchOp: match=%v", op.Match)
 	return nil
 }
 func (op *RegexMatchOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
@@ -193,7 +188,6 @@ func (op *RegexExtractOp) Run(_ context.Context) error {
 	} else {
 		op.Result = m[0]
 	}
-	log.Printf("[DEBUG] RegexExtractOp: result=%q", op.Result)
 	return nil
 }
 

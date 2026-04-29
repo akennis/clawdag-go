@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
@@ -22,7 +21,6 @@ func (op *BoolNotOp) Setup(_ *config.Params) error { return nil }
 func (op *BoolNotOp) Reset() error                 { return nil }
 func (op *BoolNotOp) Run(_ context.Context) error {
 	op.Result = !*op.Value
-	log.Printf("[DEBUG] BoolNotOp: !%v = %v", *op.Value, op.Result)
 	return nil
 }
 func (op *BoolNotOp) InputFields() map[string]any  { return map[string]any{"Value": &op.Value} }
@@ -50,7 +48,6 @@ func (op *BoolAndOp) Setup(_ *config.Params) error { return nil }
 func (op *BoolAndOp) Reset() error                 { return nil }
 func (op *BoolAndOp) Run(_ context.Context) error {
 	op.Result = *op.A && *op.B
-	log.Printf("[DEBUG] BoolAndOp: %v && %v = %v", *op.A, *op.B, op.Result)
 	return nil
 }
 func (op *BoolAndOp) InputFields() map[string]any {
@@ -88,7 +85,6 @@ func (op *BoolOrOp) Setup(_ *config.Params) error { return nil }
 func (op *BoolOrOp) Reset() error                 { return nil }
 func (op *BoolOrOp) Run(_ context.Context) error {
 	op.Result = *op.A || *op.B
-	log.Printf("[DEBUG] BoolOrOp: %v || %v = %v", *op.A, *op.B, op.Result)
 	return nil
 }
 func (op *BoolOrOp) InputFields() map[string]any {

@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
+	"github.com/wwz16/dagor/reporter"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/graph"
 	"github.com/wwz16/dagor/operator"
@@ -46,7 +48,7 @@ type PackOutfitInputsOp struct {
 
 func (op *PackOutfitInputsOp) Setup(_ *config.Params) error { return nil }
 func (op *PackOutfitInputsOp) Reset() error                 { return nil }
-func (op *PackOutfitInputsOp) Run(_ context.Context) error {
+func (op *PackOutfitInputsOp) Run(ctx context.Context) error {
 	wet := "dry"
 	if op.Wet != nil && *op.Wet {
 		wet = "rainy/wet"
@@ -71,7 +73,7 @@ func (op *PackOutfitInputsOp) Run(_ context.Context) error {
 		"Temperature: %.1f°C (%s), precipitation: %s, wind: %s, conditions: %s",
 		tempC, band, wet, windy, conditions,
 	)
-	log.Printf("[DEBUG] PackOutfitInputsOp: %q", op.Result)
+	slog.DebugContext(ctx, "PackOutfitInputsOp.done", "run_id", dagor.RunID(ctx), "result_len", len(op.Result))
 	return nil
 }
 
@@ -347,6 +349,7 @@ func main() {
 		fixture = flag.String("fixture", "", "path to captured wttr.in j1 JSON fixture")
 	)
 	flag.Parse()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	if *city == "" && *fixture == "" {
 		fmt.Fprintln(os.Stderr, "usage: 04-weather-advisor --city <name>  |  --fixture <path>")
@@ -391,7 +394,7 @@ func main() {
 	}
 	defer pool.Release()
 
-	eng, err := dagor.NewEngine(g, pool)
+	eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
 	if err != nil {
 		log.Fatalf("create engine: %v", err)
 	}

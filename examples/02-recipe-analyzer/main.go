@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"time"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
+	"github.com/wwz16/dagor/reporter"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/graph"
 	"github.com/wwz16/dagor/operator"
@@ -284,6 +286,7 @@ func main() {
 		fixture = flag.String("fixture", "", "path to a captured TheMealDB JSON response (offline)")
 	)
 	flag.Parse()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	if *meal == "" && *fixture == "" {
 		fmt.Fprintln(os.Stderr, "usage: 02-recipe-analyzer --meal <name>  |  --fixture <path>")
@@ -320,7 +323,7 @@ func main() {
 	}
 	defer pool.Release()
 
-	eng, err := dagor.NewEngine(g, pool)
+	eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
 	if err != nil {
 		log.Fatalf("create engine: %v", err)
 	}

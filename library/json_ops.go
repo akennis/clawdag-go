@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 
+	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
 )
@@ -22,7 +23,7 @@ type JSONExtractOp struct {
 
 func (op *JSONExtractOp) Setup(_ *config.Params) error { return nil }
 func (op *JSONExtractOp) Reset() error                 { return nil }
-func (op *JSONExtractOp) Run(_ context.Context) error {
+func (op *JSONExtractOp) Run(ctx context.Context) error {
 	var root any
 	if err := json.Unmarshal([]byte(*op.JSON), &root); err != nil {
 		return fmt.Errorf("JSONExtractOp: invalid JSON: %w", err)
@@ -38,7 +39,7 @@ func (op *JSONExtractOp) Run(_ context.Context) error {
 			next, ok := container[key]
 			if !ok {
 				op.Value = ""
-				log.Printf("[DEBUG] JSONExtractOp: key %q not found", key)
+				slog.DebugContext(ctx, "JSONExtractOp.missing_key", "run_id", dagor.RunID(ctx), "key", key)
 				return nil
 			}
 			cur = next
@@ -46,13 +47,13 @@ func (op *JSONExtractOp) Run(_ context.Context) error {
 			idx, err := strconv.Atoi(key)
 			if err != nil || idx < 0 || idx >= len(container) {
 				op.Value = ""
-				log.Printf("[DEBUG] JSONExtractOp: index %q invalid for array of len %d", key, len(container))
+				slog.DebugContext(ctx, "JSONExtractOp.invalid_index", "run_id", dagor.RunID(ctx), "key", key, "array_len", len(container))
 				return nil
 			}
 			cur = container[idx]
 		default:
 			op.Value = ""
-			log.Printf("[DEBUG] JSONExtractOp: path %q hit non-traversable %T", *op.Path, cur)
+			slog.DebugContext(ctx, "JSONExtractOp.non_traversable", "run_id", dagor.RunID(ctx), "path", *op.Path, "type", fmt.Sprintf("%T", cur))
 			return nil
 		}
 	}
@@ -63,7 +64,6 @@ func (op *JSONExtractOp) Run(_ context.Context) error {
 		b, _ := json.Marshal(v)
 		op.Value = string(b)
 	}
-	log.Printf("[DEBUG] JSONExtractOp: path=%q value=%q", *op.Path, op.Value)
 	return nil
 }
 

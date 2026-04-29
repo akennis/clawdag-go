@@ -3,13 +3,14 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
 )
@@ -136,7 +137,7 @@ func (op *AIClassifyMultiLabelOp) ResetFields() {
 }
 
 func (op *AIClassifyMultiLabelOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] AIClassifyMultiLabelOp: classifying %q into %v", *op.Input, op.categories)
+	slog.DebugContext(ctx, "AIClassifyMultiLabelOp.run", "run_id", dagor.RunID(ctx), "categories", op.categories)
 
 	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 	catList := strings.Join(op.categories, ", ")
@@ -164,6 +165,7 @@ func (op *AIClassifyMultiLabelOp) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
+		slog.InfoContext(ctx, "AIClassifyMultiLabelOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
 
 		var raw string
 		for _, block := range msg.Content {
@@ -193,12 +195,11 @@ func (op *AIClassifyMultiLabelOp) Run(ctx context.Context) error {
 		if len(invalid) > 0 {
 			lastErr = fmt.Sprintf("invalid categories %v not in %v", invalid, op.categories)
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious response contained invalid categories: %v. Use only: %s.", invalid, catList)
-			log.Printf("[DEBUG] AIClassifyMultiLabelOp: attempt %d invalid labels: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIClassifyMultiLabelOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 
 		op.Result = labels
-		log.Printf("[DEBUG] AIClassifyMultiLabelOp: result=%v", op.Result)
 		return nil
 	}
 	return fmt.Errorf("AIClassifyMultiLabelOp: all %d attempts failed; last error: %s", op.maxRetries+1, lastErr)
@@ -265,7 +266,7 @@ func (op *AIScoreOp) ResetFields() {
 }
 
 func (op *AIScoreOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] AIScoreOp: criterion=%q", op.criterion)
+	slog.DebugContext(ctx, "AIScoreOp.run", "run_id", dagor.RunID(ctx), "criterion", op.criterion)
 
 	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 
@@ -292,6 +293,7 @@ func (op *AIScoreOp) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
+		slog.InfoContext(ctx, "AIScoreOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
 
 		var raw string
 		for _, block := range msg.Content {
@@ -305,18 +307,17 @@ func (op *AIScoreOp) Run(ctx context.Context) error {
 		if err != nil {
 			lastErr = fmt.Sprintf("expected float64, got %q: %v", raw, err)
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious response %q was not a valid number. Respond with only a decimal number between 0.0 and 1.0.", raw)
-			log.Printf("[DEBUG] AIScoreOp: attempt %d parse failed: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIScoreOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 		if score < 0 || score > 1 {
 			lastErr = fmt.Sprintf("score %v out of [0,1]", score)
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious score %v was out of range. Respond with a number between 0.0 and 1.0.", score)
-			log.Printf("[DEBUG] AIScoreOp: attempt %d out of range: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIScoreOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 
 		op.Result = score
-		log.Printf("[DEBUG] AIScoreOp: result=%v", op.Result)
 		return nil
 	}
 	return fmt.Errorf("AIScoreOp: all %d attempts failed; last error: %s", op.maxRetries+1, lastErr)
@@ -383,7 +384,7 @@ func (op *AIBoolOp) ResetFields() {
 }
 
 func (op *AIBoolOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] AIBoolOp: predicate=%q", op.predicate)
+	slog.DebugContext(ctx, "AIBoolOp.run", "run_id", dagor.RunID(ctx), "predicate", op.predicate)
 
 	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 
@@ -409,6 +410,7 @@ func (op *AIBoolOp) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
+		slog.InfoContext(ctx, "AIBoolOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
 
 		var raw string
 		for _, block := range msg.Content {
@@ -421,16 +423,14 @@ func (op *AIBoolOp) Run(ctx context.Context) error {
 		switch raw {
 		case "true":
 			op.Result = true
-			log.Printf("[DEBUG] AIBoolOp: result=true")
 			return nil
 		case "false":
 			op.Result = false
-			log.Printf("[DEBUG] AIBoolOp: result=false")
 			return nil
 		default:
 			lastErr = fmt.Sprintf("expected true or false, got %q", raw)
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious response %q was invalid. Respond with only 'true' or 'false'.", raw)
-			log.Printf("[DEBUG] AIBoolOp: attempt %d invalid: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIBoolOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 		}
 	}
 	return fmt.Errorf("AIBoolOp: all %d attempts failed; last error: %s", op.maxRetries+1, lastErr)
@@ -499,7 +499,7 @@ func (op *AIBestMatchOp) ResetFields() {
 }
 
 func (op *AIBestMatchOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] AIBestMatchOp: query=%q candidates=%v", *op.Query, *op.Candidates)
+
 
 	n := len(*op.Candidates)
 	if n == 0 {
@@ -536,6 +536,7 @@ func (op *AIBestMatchOp) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
+		slog.InfoContext(ctx, "AIBestMatchOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
 
 		var raw string
 		for _, block := range msg.Content {
@@ -549,18 +550,17 @@ func (op *AIBestMatchOp) Run(ctx context.Context) error {
 		if err != nil {
 			lastErr = fmt.Sprintf("expected integer index, got %q: %v", raw, err)
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious response %q was not a valid integer. Respond with only the integer index.", raw)
-			log.Printf("[DEBUG] AIBestMatchOp: attempt %d parse failed: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIBestMatchOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 		if idx < 0 || idx >= n {
 			lastErr = fmt.Sprintf("index %d out of range [0,%d)", idx, n)
 			prompt = basePrompt + fmt.Sprintf("\n\nIndex %d is out of range. Must be between 0 and %d.", idx, n-1)
-			log.Printf("[DEBUG] AIBestMatchOp: attempt %d out of range: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIBestMatchOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 
 		op.Result = idx
-		log.Printf("[DEBUG] AIBestMatchOp: result=%d", op.Result)
 		return nil
 	}
 	return fmt.Errorf("AIBestMatchOp: all %d attempts failed; last error: %s", op.maxRetries+1, lastErr)
@@ -629,7 +629,7 @@ func (op *AIRerankOp) ResetFields() {
 }
 
 func (op *AIRerankOp) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] AIRerankOp: query=%q candidates=%v", *op.Query, *op.Candidates)
+
 
 	n := len(*op.Candidates)
 	if n == 0 {
@@ -666,6 +666,7 @@ func (op *AIRerankOp) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
+		slog.InfoContext(ctx, "AIRerankOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
 
 		var raw string
 		for _, block := range msg.Content {
@@ -693,14 +694,14 @@ func (op *AIRerankOp) Run(ctx context.Context) error {
 		if parseErr != "" {
 			lastErr = parseErr
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious response %q was invalid: %s. Respond with comma-separated integers only.", raw, parseErr)
-			log.Printf("[DEBUG] AIRerankOp: attempt %d parse failed: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIRerankOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 
 		if len(indices) != n {
 			lastErr = fmt.Sprintf("expected %d indices, got %d", n, len(indices))
 			prompt = basePrompt + fmt.Sprintf("\n\nMust return exactly %d indices (one per candidate).", n)
-			log.Printf("[DEBUG] AIRerankOp: attempt %d wrong count: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIRerankOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 		seen := make(map[int]bool, n)
@@ -719,12 +720,11 @@ func (op *AIRerankOp) Run(ctx context.Context) error {
 		if dupErr != "" {
 			lastErr = dupErr
 			prompt = basePrompt + fmt.Sprintf("\n\nPrevious response was invalid: %s. Return each index 0-%d exactly once.", dupErr, n-1)
-			log.Printf("[DEBUG] AIRerankOp: attempt %d invalid permutation: %s", attempt+1, lastErr)
+			slog.DebugContext(ctx, "AIRerankOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", lastErr)
 			continue
 		}
 
 		op.Result = indices
-		log.Printf("[DEBUG] AIRerankOp: result=%v", op.Result)
 		return nil
 	}
 	return fmt.Errorf("AIRerankOp: all %d attempts failed; last error: %s", op.maxRetries+1, lastErr)

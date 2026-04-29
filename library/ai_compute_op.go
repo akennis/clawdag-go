@@ -5,13 +5,14 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 )
 
@@ -124,7 +125,7 @@ func (op *AIComputeOp[In, Out]) ResetFields() {
 }
 
 func (op *AIComputeOp[In, Out]) Run(ctx context.Context) error {
-	log.Printf("[DEBUG] AIComputeOp[%T]: operation=%q", op.Result, op.operation)
+	slog.DebugContext(ctx, "AIComputeOp.run", "run_id", dagor.RunID(ctx), "operation", op.operation)
 
 	apiKey := os.Getenv("CLAUDE_API_KEY")
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
@@ -183,6 +184,7 @@ func (op *AIComputeOp[In, Out]) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
+		slog.InfoContext(ctx, "AIComputeOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
 
 		var raw string
 		for _, block := range msg.Content {
@@ -194,11 +196,10 @@ func (op *AIComputeOp[In, Out]) Run(ctx context.Context) error {
 		if parseErr := op.parseResult(strings.TrimSpace(raw)); parseErr != nil {
 			prevResponse = raw
 			prevErr = parseErr.Error()
-			log.Printf("[DEBUG] AIComputeOp: attempt %d result parse failed: %v", attempt+1, parseErr)
+			slog.DebugContext(ctx, "AIComputeOp.retry", "run_id", dagor.RunID(ctx), "attempt", attempt+1, "error", parseErr)
 			continue
 		}
 
-		log.Printf("[DEBUG] AIComputeOp: result=%v", op.Result)
 		return nil
 	}
 

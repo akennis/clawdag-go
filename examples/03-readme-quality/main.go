@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
+	"github.com/wwz16/dagor/reporter"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/graph"
 	"github.com/wwz16/dagor/operator"
@@ -48,13 +50,13 @@ func (op *StringTruncateOp) Setup(params *config.Params) error {
 	return nil
 }
 func (op *StringTruncateOp) Reset() error { return nil }
-func (op *StringTruncateOp) Run(_ context.Context) error {
+func (op *StringTruncateOp) Run(ctx context.Context) error {
 	s := *op.Input
 	if len(s) > op.maxBytes {
 		s = s[:op.maxBytes]
 	}
 	op.Result = s
-	log.Printf("[DEBUG] StringTruncateOp: %d → %d bytes", len(*op.Input), len(op.Result))
+	slog.DebugContext(ctx, "StringTruncateOp.done", "run_id", dagor.RunID(ctx), "in_bytes", len(*op.Input), "out_bytes", len(op.Result))
 	return nil
 }
 func (op *StringTruncateOp) InputFields() map[string]any  { return map[string]any{"Input": &op.Input} }
@@ -323,6 +325,7 @@ func main() {
 		fixture = flag.String("fixture", "", "path to a pre-saved README file (offline mode)")
 	)
 	flag.Parse()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	if *slug == "" && *fixture == "" {
 		fmt.Fprintln(os.Stderr, "usage: 03-readme-quality --slug <owner/repo>  |  --fixture <path>")
@@ -365,7 +368,7 @@ func main() {
 	}
 	defer pool.Release()
 
-	eng, err := dagor.NewEngine(g, pool)
+	eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
 	if err != nil {
 		log.Fatalf("create engine: %v", err)
 	}

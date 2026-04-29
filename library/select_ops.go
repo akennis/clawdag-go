@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
@@ -34,7 +33,6 @@ func (op *SelectStringOp) Run(_ context.Context) error {
 	} else {
 		op.Result = *op.IfFalse
 	}
-	log.Printf("[DEBUG] SelectStringOp: cond=%v result=%q", *op.Cond, op.Result)
 	return nil
 }
 
@@ -53,7 +51,6 @@ func (op *SelectFloat64Op) Run(_ context.Context) error {
 	} else {
 		op.Result = *op.IfFalse
 	}
-	log.Printf("[DEBUG] SelectFloat64Op: cond=%v result=%v", *op.Cond, op.Result)
 	return nil
 }
 
@@ -72,7 +69,6 @@ func (op *SelectIntOp) Run(_ context.Context) error {
 	} else {
 		op.Result = *op.IfFalse
 	}
-	log.Printf("[DEBUG] SelectIntOp: cond=%v result=%d", *op.Cond, op.Result)
 	return nil
 }
 
@@ -91,7 +87,6 @@ func (op *SelectBoolOp) Run(_ context.Context) error {
 	} else {
 		op.Result = *op.IfFalse
 	}
-	log.Printf("[DEBUG] SelectBoolOp: cond=%v result=%v", *op.Cond, op.Result)
 	return nil
 }
 
@@ -129,7 +124,6 @@ func (op *SwitchStringOp) Reset() error { return nil }
 func (op *SwitchStringOp) Run(_ context.Context) error {
 	if op.Key == nil {
 		op.Result = op.defValue
-		log.Printf("[DEBUG] SwitchStringOp: key=nil result=%q (default)", op.Result)
 		return nil
 	}
 	if v, ok := op.cases[*op.Key]; ok {
@@ -137,7 +131,6 @@ func (op *SwitchStringOp) Run(_ context.Context) error {
 	} else {
 		op.Result = op.defValue
 	}
-	log.Printf("[DEBUG] SwitchStringOp: key=%q result=%q", *op.Key, op.Result)
 	return nil
 }
 
@@ -188,7 +181,6 @@ func (op *DefaultStringOp) Run(_ context.Context) error {
 	} else {
 		op.Result = *op.Value
 	}
-	log.Printf("[DEBUG] DefaultStringOp: result=%q", op.Result)
 	return nil
 }
 
@@ -206,7 +198,6 @@ func (op *DefaultFloat64Op) Run(_ context.Context) error {
 	} else {
 		op.Result = *op.Value
 	}
-	log.Printf("[DEBUG] DefaultFloat64Op: result=%v", op.Result)
 	return nil
 }
 
@@ -224,7 +215,6 @@ func (op *DefaultIntOp) Run(_ context.Context) error {
 	} else {
 		op.Result = *op.Value
 	}
-	log.Printf("[DEBUG] DefaultIntOp: result=%d", op.Result)
 	return nil
 }
 

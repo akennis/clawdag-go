@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,7 +29,6 @@ func (op *SliceLenOp) Setup(_ *config.Params) error { return nil }
 func (op *SliceLenOp) Reset() error                 { return nil }
 func (op *SliceLenOp) Run(_ context.Context) error {
 	op.Result = len(*op.Input)
-	log.Printf("[DEBUG] SliceLenOp: len=%d", op.Result)
 	return nil
 }
 func (op *SliceLenOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
@@ -70,7 +68,6 @@ func (op *SliceAtOp) Run(_ context.Context) error {
 		return fmt.Errorf("SliceAtOp: index %d out of range (len %d)", op.index, len(sl))
 	}
 	op.Result = sl[op.index]
-	log.Printf("[DEBUG] SliceAtOp: [%d]=%q", op.index, op.Result)
 	return nil
 }
 func (op *SliceAtOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
@@ -100,7 +97,6 @@ func (op *SliceFirstOp) Run(_ context.Context) error {
 		return fmt.Errorf("SliceFirstOp: empty slice")
 	}
 	op.Result = (*op.Input)[0]
-	log.Printf("[DEBUG] SliceFirstOp: first=%q", op.Result)
 	return nil
 }
 func (op *SliceFirstOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
@@ -131,7 +127,6 @@ func (op *SliceLastOp) Run(_ context.Context) error {
 		return fmt.Errorf("SliceLastOp: empty slice")
 	}
 	op.Result = sl[len(sl)-1]
-	log.Printf("[DEBUG] SliceLastOp: last=%q", op.Result)
 	return nil
 }
 func (op *SliceLastOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
@@ -161,12 +156,10 @@ func (op *SliceContainsOp) Run(_ context.Context) error {
 	for _, s := range *op.Input {
 		if s == *op.Value {
 			op.Match = true
-			log.Printf("[DEBUG] SliceContainsOp: found %q", *op.Value)
 			return nil
 		}
 	}
 	op.Match = false
-	log.Printf("[DEBUG] SliceContainsOp: %q not found", *op.Value)
 	return nil
 }
 func (op *SliceContainsOp) InputFields() map[string]any {
@@ -207,7 +200,6 @@ func (op *SliceJoinOp) Setup(params *config.Params) error {
 func (op *SliceJoinOp) Reset() error { return nil }
 func (op *SliceJoinOp) Run(_ context.Context) error {
 	op.Result = strings.Join(*op.Input, op.sep)
-	log.Printf("[DEBUG] SliceJoinOp: joined %d elements", len(*op.Input))
 	return nil
 }
 func (op *SliceJoinOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
@@ -241,7 +233,6 @@ func (op *SliceFilterEqOp) Run(_ context.Context) error {
 		}
 	}
 	op.Result = out
-	log.Printf("[DEBUG] SliceFilterEqOp: %d matches", len(op.Result))
 	return nil
 }
 func (op *SliceFilterEqOp) InputFields() map[string]any {
@@ -301,7 +292,6 @@ func (op *SliceTopKOp) Run(_ context.Context) error {
 		k = len(indices)
 	}
 	op.Result = indices[:k]
-	log.Printf("[DEBUG] SliceTopKOp: top-%d indices=%v", op.k, op.Result)
 	return nil
 }
 func (op *SliceTopKOp) InputFields() map[string]any { return map[string]any{"Scores": &op.Scores} }

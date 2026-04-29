@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
+	"github.com/wwz16/dagor/reporter"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/graph"
 	"github.com/wwz16/dagor/operator"
@@ -43,7 +45,7 @@ type ExtractTitlesOp struct {
 
 func (op *ExtractTitlesOp) Setup(_ *config.Params) error { return nil }
 func (op *ExtractTitlesOp) Reset() error                 { return nil }
-func (op *ExtractTitlesOp) Run(_ context.Context) error {
+func (op *ExtractTitlesOp) Run(ctx context.Context) error {
 	var resp struct {
 		Hits []struct {
 			Title string `json:"title"`
@@ -58,7 +60,7 @@ func (op *ExtractTitlesOp) Run(_ context.Context) error {
 			op.Result = append(op.Result, h.Title)
 		}
 	}
-	log.Printf("[DEBUG] ExtractTitlesOp: extracted %d titles", len(op.Result))
+	slog.DebugContext(ctx, "ExtractTitlesOp.done", "run_id", dagor.RunID(ctx), "title_count", len(op.Result))
 	return nil
 }
 func (op *ExtractTitlesOp) InputFields() map[string]any  { return map[string]any{"JSON": &op.JSON} }
@@ -91,7 +93,7 @@ type FilterAndFlattenOp struct {
 
 func (op *FilterAndFlattenOp) Setup(_ *config.Params) error { return nil }
 func (op *FilterAndFlattenOp) Reset() error                 { return nil }
-func (op *FilterAndFlattenOp) Run(_ context.Context) error {
+func (op *FilterAndFlattenOp) Run(ctx context.Context) error {
 	titles := *op.Titles
 	flags := *op.RelevantFlags
 	lists := *op.LabelLists
@@ -114,8 +116,7 @@ func (op *FilterAndFlattenOp) Run(_ context.Context) error {
 			op.AllLabels = append(op.AllLabels, labels...)
 		}
 	}
-	log.Printf("[DEBUG] FilterAndFlattenOp: kept %d/%d titles, %d total labels",
-		len(op.KeptTitles), len(*op.Titles), len(op.AllLabels))
+	slog.DebugContext(ctx, "FilterAndFlattenOp.done", "run_id", dagor.RunID(ctx), "kept", len(op.KeptTitles), "total", len(*op.Titles), "labels", len(op.AllLabels))
 	return nil
 }
 func (op *FilterAndFlattenOp) InputFields() map[string]any {
@@ -173,7 +174,7 @@ type DominantCategoryOp struct {
 
 func (op *DominantCategoryOp) Setup(_ *config.Params) error { return nil }
 func (op *DominantCategoryOp) Reset() error                 { return nil }
-func (op *DominantCategoryOp) Run(_ context.Context) error {
+func (op *DominantCategoryOp) Run(ctx context.Context) error {
 	counts := make(map[string]int)
 	for _, label := range *op.AllLabels {
 		label = strings.TrimSpace(label)
@@ -191,7 +192,7 @@ func (op *DominantCategoryOp) Run(_ context.Context) error {
 		}
 	}
 	op.Dominant = best
-	log.Printf("[DEBUG] DominantCategoryOp: dominant=%q (count=%d)", op.Dominant, bestCount)
+	slog.DebugContext(ctx, "DominantCategoryOp.done", "run_id", dagor.RunID(ctx), "dominant", op.Dominant, "count", bestCount)
 	return nil
 }
 func (op *DominantCategoryOp) InputFields() map[string]any {
@@ -375,6 +376,7 @@ func main() {
 		fixture = flag.String("fixture", "", "path to a pre-captured HN API response JSON file")
 	)
 	flag.Parse()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	if *query == "" {
 		fmt.Fprintln(os.Stderr, "usage: 05-hn-topic-brief --query <term> [--cache | --fixture <path>]")
@@ -399,7 +401,7 @@ func main() {
 	}
 	defer pool.Release()
 
-	eng, err := dagor.NewEngine(g, pool)
+	eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
 	if err != nil {
 		log.Fatalf("create engine: %v", err)
 	}
@@ -495,14 +497,14 @@ func fetchOrLoad(query string, useCache bool, fixturePath string) (string, error
 		if err != nil {
 			return "", fmt.Errorf("read cache %s: %w (run without --cache to fetch live)", path, err)
 		}
-		log.Printf("[INFO] loaded fixture %s (%d bytes)", path, len(data))
+		slog.Info("fetchOrLoad.fixture", "path", path, "bytes", len(data))
 		return string(data), nil
 	}
 
 	// Live fetch
 	endpoint := "https://hn.algolia.com/api/v1/search?query=" +
 		url.QueryEscape(query) + "&hitsPerPage=10"
-	log.Printf("[INFO] fetching %s", endpoint)
+	slog.Info("fetchOrLoad.live", "endpoint", endpoint)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

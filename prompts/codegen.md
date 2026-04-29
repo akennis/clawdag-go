@@ -123,7 +123,7 @@ func runWorkflow(ctx context.Context, pool *ants.Pool, input UserInput) (string,
     if err != nil {
         return "", fmt.Errorf("build: %w", err)
     }
-    eng, err := dagor.NewEngine(g, pool)
+    eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
     if err != nil {
         return "", fmt.Errorf("engine: %w", err)
     }
@@ -236,6 +236,8 @@ so no process-level timeout is used — the per-call timeout inside the tool han
 func main() {
     mode := flag.String("mode", "cli", "runtime mode: cli or mcp")
     flag.Parse()
+
+    slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
     registerPredicates() // omit if no predicates
     pool, _ := ants.NewPool(10)
@@ -392,6 +394,8 @@ func buildGraph(sourceVal int) (*graph.Graph, error) {
     v, ok := p.GetString("key", "")               // WRONG: GetString returns 1 value, not 2
 
 # NECCESSARY IMPORTS — use these as required:
+  "log/slog"                                   // structured logging — REQUIRED (set up in main, used in ops)
+  "os"                                         // os.Stderr for slog handler — REQUIRED
   _ "github.com/akennis/clawdag-go/library"    // pre-programmed operations and pre-formed AI nodes
                                                // NOTE: replace the blank _ with a named import when you
                                                // need to embed library.AIComputeOp in a custom op type:
@@ -403,6 +407,7 @@ func buildGraph(sourceVal int) (*graph.Graph, error) {
   "github.com/wwz16/dagor/config"              // config.MergeCoalesce — REQUIRED whenever .Merge() is called
   "github.com/wwz16/dagor/graph"               // graph.NewBuilder
   "github.com/wwz16/dagor/predicate"           // only when registering condition predicates
+  "github.com/wwz16/dagor/reporter"            // SlogReporter — pass to dagor.WithReporter; REQUIRED
   "flag"                                        // REQUIRED — always present for --mode flag parsing
   "github.com/mark3labs/mcp-go/mcp"            // MCP tool definition — REQUIRED for --mode mcp
   "github.com/mark3labs/mcp-go/server"         // MCP stdio server — REQUIRED for --mode mcp
@@ -410,10 +415,38 @@ func buildGraph(sourceVal int) (*graph.Graph, error) {
 # HOW TO RUN A DAGOR GRAPH — use exactly this pattern:
   pool, _ := ants.NewPool(10); defer pool.Release()
   g, err := buildGraph(sourceVal)
-  eng, err := dagor.NewEngine(g, pool)
+  eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
   ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute); defer cancel()
   if err := eng.Run(ctx); err != nil { log.Fatal(err) }
   raw, ok := eng.GetOutput("wire_name")  // returns (any, bool); cast result to *float64, *string, etc.
+
+# LOGGING — structured observability, REQUIRED in all generated programs
+
+## Setup (in main(), once, before pool and engine creation):
+  slogLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+  slog.SetDefault(slogLogger)
+
+## Engine creation — pass reporter to every NewEngine call:
+  eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
+  // The reporter emits structured log lines for every graph start/finish and vertex start/finish/skip.
+  // It also logs all operator input and output field values (OnVertexFields) — do NOT duplicate these.
+
+## Custom op Run methods — use slog.DebugContext for intermediate state only:
+  func (op *FetchDataOp) Run(ctx context.Context) error {
+      slog.DebugContext(ctx, "FetchDataOp.run", "run_id", dagor.RunID(ctx))
+      // ... call external API ...
+      slog.DebugContext(ctx, "FetchDataOp.done", "run_id", dagor.RunID(ctx), "bytes", len(op.Result))
+      return nil
+  }
+
+## Rules:
+  * NEVER use log.Printf in custom op Run methods — use slog.DebugContext for structured, correlated output.
+    log.Fatal / log.Fatalf in main() for unrecoverable errors is fine.
+  * Always include "run_id", dagor.RunID(ctx) in every slog call inside an op — this ties op log lines
+    to the reporter's vertex.start / vertex.finish events for the same execution.
+  * Log ONLY intermediate state not captured in fields: e.g. "calling API", "received N bytes", "cache miss".
+    The reporter already logs all input/output field values automatically — do not repeat them.
+  * Message format: "OpName.event" (e.g. "FetchDataOp.run", "ParseOp.done", "LookupOp.cache_miss").
 
 # CRITICAL — DO NOT iterate over g.Vertices or inspect graph internals:
   WRONG: for _, v := range g.Vertices { ... }  // g.Vertices is a func, not a map — compile error
@@ -940,6 +973,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -955,6 +989,7 @@ import (
 	"github.com/wwz16/dagor/graph"
 	"github.com/wwz16/dagor/operator"
 	"github.com/wwz16/dagor/predicate"
+	"github.com/wwz16/dagor/reporter"
 )
 
 // ── 0. User input ─────────────────────────────────────────────────────────────
@@ -1164,7 +1199,7 @@ func buildGraph(input UserInput) (*graph.Graph, error) {
 func runWorkflow(ctx context.Context, pool *ants.Pool, input UserInput) (string, error) {
 	g, err := buildGraph(input)
 	if err != nil { return "", fmt.Errorf("build: %w", err) }
-	eng, err := dagor.NewEngine(g, pool)
+	eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
 	if err != nil { return "", fmt.Errorf("engine: %w", err) }
 	if err := eng.Run(ctx); err != nil { return "", fmt.Errorf("run: %w", err) }
 	raw, ok := eng.GetOutput("final_result")
@@ -1214,6 +1249,8 @@ func runMCPServer(pool *ants.Pool) error {
 func main() {
 	mode := flag.String("mode", "cli", "runtime mode: cli or mcp")
 	flag.Parse()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	registerPredicates()
 	pool, _ := ants.NewPool(10)

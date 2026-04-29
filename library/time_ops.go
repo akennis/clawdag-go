@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/wwz16/dagor/config"
@@ -39,7 +38,6 @@ func (op *CityTimeOp) Run(ctx context.Context) error {
 		return fmt.Errorf("CityTimeOp: failed to load timezone %q: %w", tzName, err)
 	}
 	op.Result = time.Now().In(loc).Format(time.RFC3339)
-	log.Printf("[DEBUG] CityTimeOp: city=%q time=%s", city, op.Result)
 	return nil
 }
 
