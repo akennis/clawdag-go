@@ -84,6 +84,7 @@ func (op *AIClassifyMultiLabelOp) Setup(params *config.Params) error {
 	if raw == "" {
 		return fmt.Errorf("AIClassifyMultiLabelOp: 'categories' param is required")
 	}
+	op.categories = nil // reset before appending so pool reuse doesn't accumulate
 	op.catSet = make(map[string]bool)
 	for _, c := range strings.Split(raw, ",") {
 		c = strings.TrimSpace(c)

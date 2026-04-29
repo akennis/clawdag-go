@@ -298,7 +298,7 @@ func registerPredicates() {
 //
 // Graph topology (repeated for each level):
 //
-//   StringConstOp ──► ParseExpressionOp
+//   ConstStringOp ──► ParseExpressionOp
 //                         │
 //              ┌──────────┼──────────┐──────────┐
 //          gate_add   gate_sub   gate_div   gate_mul   (exactly one runs)
@@ -314,7 +314,7 @@ func buildGraph(expression string) (*graph.Graph, error) {
 	return graph.NewBuilder("arithmetic").
 
 		// ── Input: inject user expression as a constant ──────────────────────
-		Vertex("expr_const").Op("StringConstOp").
+		Vertex("expr_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": expression}).
 		Output("Result", "user_expr").
 

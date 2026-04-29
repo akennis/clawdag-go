@@ -38,6 +38,7 @@ func (op *ModeSelectOp) Setup(params *config.Params) error {
 	if raw == "" {
 		return fmt.Errorf("ModeSelectOp: 'categories' param is required")
 	}
+	op.categories = nil // reset before appending so pool reuse doesn't accumulate
 	for _, c := range strings.Split(raw, ",") {
 		if c = strings.TrimSpace(c); c != "" {
 			op.categories = append(op.categories, c)

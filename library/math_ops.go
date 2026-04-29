@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"strconv"
 
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
@@ -19,7 +18,6 @@ func (m MathOperands) FormatForPrompt() string {
 	return fmt.Sprintf("A=%v, B=%v", m.A, m.B)
 }
 
-const ConstOpDescription = "ConstOp: injects a constant float64. Params: Value string (e.g. \"3.0\"). Output: Result float64."
 const AddOpDescription = "AddOp: deterministic addition. Inputs: A *float64, B *float64. Output: Result float64."
 const SubOpDescription = "SubOp: A minus B. Inputs: A *float64, B *float64. Output: Result float64."
 const DivOpDescription = "DivOp: A divided by B. Inputs: A *float64, B *float64. Output: Result float64. Error if B==0."
@@ -66,27 +64,6 @@ func (op *DivOp) Run(ctx context.Context) error {
 	}
 	op.Result = *op.A / *op.B
 	log.Printf("[DEBUG] DivOp: %v / %v = %v", *op.A, *op.B, op.Result)
-	return nil
-}
-
-type ConstOp struct {
-	Result float64 `dag:"output"`
-	value  float64
-}
-
-func (op *ConstOp) Setup(params *config.Params) error {
-	s := params.GetString("Value", "0")
-	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return fmt.Errorf("ConstOp: invalid Value %q: %w", s, err)
-	}
-	op.value = v
-	return nil
-}
-func (op *ConstOp) Reset() error { return nil }
-func (op *ConstOp) Run(ctx context.Context) error {
-	op.Result = op.value
-	log.Printf("[DEBUG] ConstOp: value=%v", op.Result)
 	return nil
 }
 
@@ -277,7 +254,6 @@ func (op *MaxOp) SetInputField(field string, value any) error {
 func (op *MaxOp) ResetFields() { op.Values = nil; op.Result = 0 }
 
 func init() {
-	operator.RegisterOp[ConstOp]()
 	operator.RegisterOp[AddOp]()
 	operator.RegisterOp[SubOp]()
 	operator.RegisterOp[DivOp]()

@@ -332,7 +332,7 @@ func buildGraph(ticketBody string) (*graph.Graph, error) {
 	return graph.NewBuilder("ticket_triage").
 
 		// Inject the ticket body as a constant string.
-		Vertex("body_const").Op("StringConstOp").
+		Vertex("body_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": ticketBody}).
 		Output("Result", "ticket_body").
 

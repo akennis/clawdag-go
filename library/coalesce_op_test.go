@@ -1,8 +1,6 @@
 package library
 
 import (
-	"context"
-	"strings"
 	"testing"
 
 	"github.com/wwz16/dagor/config"
@@ -12,190 +10,15 @@ import (
 
 func boolPtr(v bool) *bool { return &v }
 
-// ───────────────────────────── CoalesceStringOp ──────────────────────────────
-
-func TestCoalesceStringOp_FirstSet(t *testing.T) {
-	a := "first"
-	b := "second"
-	op := &CoalesceStringOp{}
-	op.A = &a
-	op.B = &b
-	if err := op.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if op.Result != "first" {
-		t.Errorf("Result = %q, want %q", op.Result, "first")
-	}
-}
-
-func TestCoalesceStringOp_ThirdSet(t *testing.T) {
-	c := "third"
-	d := "fourth"
-	op := &CoalesceStringOp{}
-	op.C = &c
-	op.D = &d
-	if err := op.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if op.Result != "third" {
-		t.Errorf("Result = %q, want %q", op.Result, "third")
-	}
-}
-
-func TestCoalesceStringOp_AllNil(t *testing.T) {
-	op := &CoalesceStringOp{}
-	err := op.Run(context.Background())
-	if err == nil {
-		t.Fatal("expected error when all inputs nil")
-	}
-	if !strings.Contains(err.Error(), "all inputs nil") {
-		t.Errorf("error %q should mention 'all inputs nil'", err.Error())
-	}
-}
-
-// ──────────────────────── Other concrete variants ────────────────────────────
-
-func TestCoalesceFloat64Op_SecondSet(t *testing.T) {
-	b := 4.2
-	op := &CoalesceFloat64Op{}
-	op.B = &b
-	if err := op.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if op.Result != 4.2 {
-		t.Errorf("Result = %v, want 4.2", op.Result)
-	}
-}
-
-func TestCoalesceIntOp_FourthSet(t *testing.T) {
-	d := 42
-	op := &CoalesceIntOp{}
-	op.D = &d
-	if err := op.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if op.Result != 42 {
-		t.Errorf("Result = %v, want 42", op.Result)
-	}
-}
-
-func TestCoalesceBoolOp_FirstSet(t *testing.T) {
-	a := true
-	op := &CoalesceBoolOp{}
-	op.A = &a
-	if err := op.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !op.Result {
-		t.Errorf("Result = %v, want true", op.Result)
-	}
-}
-
-func TestCoalesceIntOp_AllNil(t *testing.T) {
-	op := &CoalesceIntOp{}
-	if err := op.Run(context.Background()); err == nil {
-		t.Fatal("expected error when all inputs nil")
-	}
-}
-
-// ─────────────────────────── IOperator boilerplate ───────────────────────────
-
-func TestCoalesceOp_InputFields(t *testing.T) {
-	op := &CoalesceStringOp{}
-	fields := op.InputFields()
-	for _, name := range []string{"A", "B", "C", "D"} {
-		if _, ok := fields[name]; !ok {
-			t.Errorf("missing input %s", name)
-		}
-	}
-}
-
-func TestCoalesceOp_OutputFields(t *testing.T) {
-	op := &CoalesceFloat64Op{}
-	if _, ok := op.OutputFields()["Result"]; !ok {
-		t.Error("missing output Result")
-	}
-}
-
-func TestCoalesceOp_SetInputField(t *testing.T) {
-	op := &CoalesceStringOp{}
-	v := "hi"
-	if err := op.SetInputField("B", &v); err != nil {
-		t.Fatalf("SetInputField B: %v", err)
-	}
-	if op.B == nil || *op.B != "hi" {
-		t.Errorf("B not set; got %v", op.B)
-	}
-}
-
-func TestCoalesceOp_SetInputField_WrongType(t *testing.T) {
-	op := &CoalesceStringOp{}
-	if err := op.SetInputField("A", 42); err == nil {
-		t.Error("expected error for wrong-typed value")
-	}
-}
-
-func TestCoalesceOp_SetInputField_UnknownField(t *testing.T) {
-	op := &CoalesceStringOp{}
-	v := "x"
-	if err := op.SetInputField("Z", &v); err == nil {
-		t.Error("expected error for unknown field")
-	}
-}
-
-func TestCoalesceOp_ResetFields(t *testing.T) {
-	a := "a"
-	b := "b"
-	op := &CoalesceStringOp{}
-	op.A = &a
-	op.B = &b
-	op.Result = "x"
-	op.ResetFields()
-	if op.A != nil || op.B != nil || op.C != nil || op.D != nil {
-		t.Errorf("ResetFields did not nil pointers: %+v", op)
-	}
-	if op.Result != "" {
-		t.Errorf("ResetFields Result = %q, want \"\"", op.Result)
-	}
-}
-
-func TestCoalesceOp_SetupReset(t *testing.T) {
-	op := &CoalesceIntOp{}
-	if err := op.Setup(mustParams(t, map[string]string{})); err != nil {
-		t.Errorf("Setup: %v", err)
-	}
-	if err := op.Reset(); err != nil {
-		t.Errorf("Reset: %v", err)
-	}
-}
-
-// ─────────────────────────── Description constants ───────────────────────────
-
-func TestCoalesceDescriptions_NonEmpty(t *testing.T) {
-	descs := map[string]string{
-		"CoalesceStringOp":  CoalesceStringOpDescription,
-		"CoalesceFloat64Op": CoalesceFloat64OpDescription,
-		"CoalesceIntOp":     CoalesceIntOpDescription,
-		"CoalesceBoolOp":    CoalesceBoolOpDescription,
-	}
-	for name, desc := range descs {
-		if desc == "" {
-			t.Errorf("%s description is empty", name)
-		}
-		if !strings.HasPrefix(desc, name) {
-			t.Errorf("%s description should start with op name, got %q", name, desc)
-		}
-	}
-}
-
-// ───────────────────────────── Integration test ──────────────────────────────
+// ───────────────────────────── Integration tests ──────────────────────────────
 //
-// TestCoalesceOp_Integration_ConditionalMerge mirrors the merge example in
-// llm-hints.md: two conditional branches feed into a CoalesceIntOp gated with
-// MergeCoalesce. The "is_positive" branch runs and provides A; the negative
-// branch is skipped, so B is nil. The coalesce should still execute (thanks
-// to MergeCoalesce) and pick A.
+// These tests verify that dagor's MergeCoalesce skip semantics work correctly
+// with the builtin CoalesceOp in conditional-branch DAGs.
 
+// TestCoalesceOp_Integration_ConditionalMerge: two mutually-exclusive branches
+// feed into a CoalesceFloat64Op with MergeCoalesce. The positive branch fires
+// (value=5>0) and provides A; the negative branch is skipped. The coalesce
+// must still execute and pick A.
 func TestCoalesceOp_Integration_ConditionalMerge(t *testing.T) {
 	const posPred = "test_coalesce_int_is_positive"
 	const negPred = "test_coalesce_int_is_negative"
@@ -216,25 +39,20 @@ func TestCoalesceOp_Integration_ConditionalMerge(t *testing.T) {
 	}
 	defer predicate.Unregister(negPred)
 
-	// Source: 5 (positive). Pos branch: emit ConstOp(100). Neg branch: ConstOp(-100).
-	// Coalesce picks A (pos branch's int output).
 	g, err := graph.NewBuilder("coalesce_int_demo").
-		Vertex("src").Op("ConstOp").
+		Vertex("src").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "5"}).
 		Output("Result", "src_val").
-		// Positive branch — runs (5 > 0).
-		Vertex("pos").Op("ConstOp").
+		Vertex("pos").Op("ConstFloat64Op").
 		Condition(posPred).
 		ConditionInput("src_val").
 		Params(map[string]string{"Value": "100"}).
 		Output("Result", "pos_out").
-		// Negative branch — skipped (5 not < 0).
-		Vertex("neg").Op("ConstOp").
+		Vertex("neg").Op("ConstFloat64Op").
 		Condition(negPred).
 		ConditionInput("src_val").
 		Params(map[string]string{"Value": "-100"}).
 		Output("Result", "neg_out").
-		// Coalesce — must run despite neg being skipped.
 		Vertex("coalesce").Op("CoalesceFloat64Op").
 		Merge(config.MergeCoalesce).
 		Input("A", "pos_out").Input("B", "neg_out").
@@ -257,8 +75,9 @@ func TestCoalesceOp_Integration_ConditionalMerge(t *testing.T) {
 	}
 }
 
-// TestCoalesceOp_Integration_StringVariant exercises the registered op-name
-// resolution path for the string variant.
+// TestCoalesceOp_Integration_StringVariant: exercises op-name resolution for
+// CoalesceStringOp. The always-true branch provides A; the always-false branch
+// is skipped. Coalesce must pick A.
 func TestCoalesceOp_Integration_StringVariant(t *testing.T) {
 	const truePred = "test_coalesce_string_always_true"
 	const falsePred = "test_coalesce_string_always_false"
@@ -274,11 +93,11 @@ func TestCoalesceOp_Integration_StringVariant(t *testing.T) {
 	defer predicate.Unregister(falsePred)
 
 	g, err := graph.NewBuilder("coalesce_string_demo").
-		Vertex("a_branch").Op("StringConstOp").
+		Vertex("a_branch").Op("ConstStringOp").
 		Condition(truePred).
 		Params(map[string]string{"Value": "alpha"}).
 		Output("Result", "a_out").
-		Vertex("b_branch").Op("StringConstOp").
+		Vertex("b_branch").Op("ConstStringOp").
 		Condition(falsePred).
 		Params(map[string]string{"Value": "beta"}).
 		Output("Result", "b_out").
@@ -303,6 +122,3 @@ func TestCoalesceOp_Integration_StringVariant(t *testing.T) {
 		t.Errorf("final = %q, want %q", *v, "alpha")
 	}
 }
-
-// keep boolPtr referenced even if a refactor drops a use.
-var _ = boolPtr

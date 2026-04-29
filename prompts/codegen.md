@@ -604,11 +604,48 @@ func buildGraph(sourceVal int) (*graph.Graph, error) {
       PassthroughWire("Result", "city_lookup_result").
       Input("Input", "trimmed_input").
       Output("Result", "city_time_ai_result").
+  * SELECTION RULE — SelectStringOp vs CoalesceOp: these solve different problems.
+    - CoalesceOp (with Merge: MergeCoalesce): merges conditional branches where one or more upstream
+      vertices may be SKIPPED by a predicate. Exactly one branch fires; others produce nil; coalesce
+      picks the non-nil winner.
+    - SelectStringOp: always-running deterministic ternary — takes a `*bool` runtime wire and returns
+      one of two non-nil inputs. No predicate, no skip propagation. Use when BOTH inputs always exist
+      and the choice is driven by a runtime bool wire (e.g. from AIBoolOp or IfFloat*Op).
+
+    Common use — orthogonal bool probe appends an optional suffix to the main output:
+      // has_tests is a *bool wire from AIBoolOp; neither empty_text nor warning_text is skippable.
+      Vertex("test_warning").Op("SelectStringOp").
+        Input("Cond", "has_tests").
+        Input("IfTrue", "empty_text").    // bool=true → no warning
+        Input("IfFalse", "warning_text"). // bool=false → append warning
+        Output("Result", "warning_suffix")
+      Vertex("final").Op("StringConcatOp").
+        Input("A", "narrative").Input("B", "warning_suffix").Output("Result", "final_output")
+
+    WRONG: using CoalesceOp when neither input is from a skipped branch:
+      Vertex("coalesce_warning").Op("CoalesceStringOp").Merge(config.MergeCoalesce).
+        Input("A", "warning_branch_out").Input("B", "empty_branch_out")...  // both always run
+
   * COALESCE RULE: After conditional branches, ALWAYS merge with a CoalesceOp vertex (MergeCoalesce).
     Read the result from the single coalesced wire via eng.GetOutput. NEVER use eng.VertexSkipped
     to manually select between branch wires — that defeats the purpose of coalescing.
     RIGHT: raw, ok := eng.GetOutput("final_result")  // single wire from CoalesceOp
     WRONG: if eng.VertexSkipped("v") { ... } else { ... }  // manual branch selection
+    This also applies to deriving output labels (e.g. a "verdict" or "difficulty" field). Read the
+    decision wire from eng.GetOutput and compute the label in Go — do NOT infer which lane ran from
+    VertexSkipped:
+    WRONG:
+      for _, v := range []string{"excellent", "ok", "poor"} {
+          if !eng.VertexSkipped(v + "_lane") { out.Verdict = v; break }
+      }
+    RIGHT:
+      if v, ok := getFloat(eng, "avg_score"); ok {
+          switch { case v >= 0.75: out.Verdict = "excellent"
+                   case v >= 0.40: out.Verdict = "ok"
+                   default:        out.Verdict = "poor" }
+      }
+    VertexSkipped is only acceptable for building audit/metadata lists (e.g. recording which AI ops
+    fired), where there is no decision wire to read from.
     MERGE CALL: always use the typed constant — NEVER a raw integer literal.
       RIGHT: .Merge(config.MergeCoalesce)   // import "github.com/wwz16/dagor/config"
       WRONG: .Merge(1)                       // compile error: untyped int cannot be used as MergeStrategy
@@ -727,6 +764,30 @@ func buildGraph(sourceVal int) (*graph.Graph, error) {
   NOTE: when defining a custom AIComputeOp variant, use a named import for the library package
   (not a blank import) so you can reference library.AIComputeOp:
     clawdag "github.com/akennis/clawdag-go/library"
+
+# KNOWN LIBRARY GAPS — fill these with inline custom ops when needed:
+  * **Integer constants**: `ConstOp` outputs `float64` ONLY. When you need a `*int` constant to feed
+    `IfIntEqOp`, `IfIntLtOp`, etc., write a custom `IntConstOp` inline (see pattern below). Using
+    `ConstOp` for int comparisons causes a runtime type-mismatch error.
+  * **String truncation**: no library op caps string length. Write a custom `StringTruncateOp` when
+    passing large text (e.g. a fetched README or HTTP body) to AI ops to stay within context limits.
+
+  Minimal `IntConstOp` pattern:
+  ```go
+  type IntConstOp struct { Result int; value int }
+  func (op *IntConstOp) Setup(p *config.Params) error {
+      s := p.GetString("Value", "0"); v, err := strconv.Atoi(s)
+      if err != nil { return fmt.Errorf("IntConstOp: %w", err) }
+      op.value = v; return nil
+  }
+  func (op *IntConstOp) Reset() error { return nil }
+  func (op *IntConstOp) Run(_ context.Context) error { op.Result = op.value; return nil }
+  func (op *IntConstOp) InputFields() map[string]any  { return map[string]any{} }
+  func (op *IntConstOp) OutputFields() map[string]any { return map[string]any{"Result": &op.Result} }
+  func (op *IntConstOp) SetInputField(f string, _ any) error { return fmt.Errorf("no inputs: %s", f) }
+  func (op *IntConstOp) ResetFields() { op.Result = 0 }
+  func init() { operator.RegisterOp[IntConstOp]() }
+  ```
 
 # GENERATING NEW DETERMINISTIC OPS ON THE FLY:
   Before using ANY AI op, ask: "can Go code — including a hardcoded dataset — compute this correctly

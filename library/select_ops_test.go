@@ -376,22 +376,22 @@ func TestSelectSwitchDefaultDescriptions(t *testing.T) {
 
 // TestSelectStringOp_Integration wires a SelectStringOp into a real graph and
 // confirms it picks the IfTrue branch when Cond is true. The cond bool is
-// supplied via IfStringEqOp comparing two StringConstOps.
+// supplied via IfStringEqOp comparing two ConstStringOps.
 func TestSelectStringOp_Integration(t *testing.T) {
 	g, err := graph.NewBuilder("select_string_demo").
-		Vertex("a").Op("StringConstOp").
+		Vertex("a").Op("ConstStringOp").
 		Params(map[string]string{"Value": "match"}).
 		Output("Result", "a_w").
-		Vertex("b").Op("StringConstOp").
+		Vertex("b").Op("ConstStringOp").
 		Params(map[string]string{"Value": "match"}).
 		Output("Result", "b_w").
 		Vertex("eq").Op("IfStringEqOp").
 		Input("A", "a_w").Input("B", "b_w").
 		Output("Match", "cond_w").
-		Vertex("if_true").Op("StringConstOp").
+		Vertex("if_true").Op("ConstStringOp").
 		Params(map[string]string{"Value": "yes"}).
 		Output("Result", "yes_w").
-		Vertex("if_false").Op("StringConstOp").
+		Vertex("if_false").Op("ConstStringOp").
 		Params(map[string]string{"Value": "no"}).
 		Output("Result", "no_w").
 		Vertex("sel").Op("SelectStringOp").
@@ -418,19 +418,19 @@ func TestSelectStringOp_Integration(t *testing.T) {
 // TestSelectStringOp_Integration_FalseBranch covers the false path.
 func TestSelectStringOp_Integration_FalseBranch(t *testing.T) {
 	g, err := graph.NewBuilder("select_string_false_demo").
-		Vertex("a").Op("StringConstOp").
+		Vertex("a").Op("ConstStringOp").
 		Params(map[string]string{"Value": "x"}).
 		Output("Result", "a_w").
-		Vertex("b").Op("StringConstOp").
+		Vertex("b").Op("ConstStringOp").
 		Params(map[string]string{"Value": "y"}).
 		Output("Result", "b_w").
 		Vertex("eq").Op("IfStringEqOp").
 		Input("A", "a_w").Input("B", "b_w").
 		Output("Match", "cond_w").
-		Vertex("if_true").Op("StringConstOp").
+		Vertex("if_true").Op("ConstStringOp").
 		Params(map[string]string{"Value": "yes"}).
 		Output("Result", "yes_w").
-		Vertex("if_false").Op("StringConstOp").
+		Vertex("if_false").Op("ConstStringOp").
 		Params(map[string]string{"Value": "no"}).
 		Output("Result", "no_w").
 		Vertex("sel").Op("SelectStringOp").
@@ -453,7 +453,7 @@ func TestSelectStringOp_Integration_FalseBranch(t *testing.T) {
 // the registry.
 func TestSwitchStringOp_Integration_Hit(t *testing.T) {
 	g, err := graph.NewBuilder("switch_hit_demo").
-		Vertex("k").Op("StringConstOp").
+		Vertex("k").Op("ConstStringOp").
 		Params(map[string]string{"Value": "green"}).
 		Output("Result", "k_w").
 		Vertex("sw").Op("SwitchStringOp").
@@ -477,7 +477,7 @@ func TestSwitchStringOp_Integration_Hit(t *testing.T) {
 
 func TestSwitchStringOp_Integration_Miss(t *testing.T) {
 	g, err := graph.NewBuilder("switch_miss_demo").
-		Vertex("k").Op("StringConstOp").
+		Vertex("k").Op("ConstStringOp").
 		Params(map[string]string{"Value": "purple"}).
 		Output("Result", "k_w").
 		Vertex("sw").Op("SwitchStringOp").
@@ -503,10 +503,10 @@ func TestSwitchStringOp_Integration_Miss(t *testing.T) {
 // when Value is supplied and is non-empty (so the value passes through).
 func TestDefaultStringOp_Integration(t *testing.T) {
 	g, err := graph.NewBuilder("default_string_demo").
-		Vertex("v").Op("StringConstOp").
+		Vertex("v").Op("ConstStringOp").
 		Params(map[string]string{"Value": "real"}).
 		Output("Result", "v_w").
-		Vertex("d").Op("StringConstOp").
+		Vertex("d").Op("ConstStringOp").
 		Params(map[string]string{"Value": "fallback"}).
 		Output("Result", "d_w").
 		Vertex("def").Op("DefaultStringOp").
@@ -528,10 +528,10 @@ func TestDefaultStringOp_Integration(t *testing.T) {
 // fallback path.
 func TestDefaultStringOp_Integration_EmptyFallsBack(t *testing.T) {
 	g, err := graph.NewBuilder("default_string_empty_demo").
-		Vertex("v").Op("StringConstOp").
+		Vertex("v").Op("ConstStringOp").
 		Params(map[string]string{"Value": ""}).
 		Output("Result", "v_w").
-		Vertex("d").Op("StringConstOp").
+		Vertex("d").Op("ConstStringOp").
 		Params(map[string]string{"Value": "fallback"}).
 		Output("Result", "d_w").
 		Vertex("def").Op("DefaultStringOp").
@@ -553,10 +553,10 @@ func TestDefaultStringOp_Integration_EmptyFallsBack(t *testing.T) {
 // zero as a valid value (does NOT fall back).
 func TestDefaultFloat64Op_Integration_ZeroIsValid(t *testing.T) {
 	g, err := graph.NewBuilder("default_float_zero_demo").
-		Vertex("v").Op("ConstOp").
+		Vertex("v").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "0"}).
 		Output("Result", "v_w").
-		Vertex("d").Op("ConstOp").
+		Vertex("d").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "99"}).
 		Output("Result", "d_w").
 		Vertex("def").Op("DefaultFloat64Op").

@@ -34,22 +34,22 @@ func buildDesignDAG() (*graph.Graph, error) {
 		Build()
 }
 
-// buildRefineDAG constructs the refinement DAG using StringConstOp for the four known values.
+// buildRefineDAG constructs the refinement DAG using ConstStringOp for the four known values.
 func buildRefineDAG(prompt, library, prevDesign, feedback string) (*graph.Graph, error) {
 	return graph.NewBuilder("refine_dag").
-		Vertex("prompt_const").Op("StringConstOp").
+		Vertex("prompt_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": prompt}).
 		Output("Result", "prompt_const_out").
 
-		Vertex("library_const").Op("StringConstOp").
+		Vertex("library_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": library}).
 		Output("Result", "library_const_out").
 
-		Vertex("prev_design_const").Op("StringConstOp").
+		Vertex("prev_design_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": prevDesign}).
 		Output("Result", "prev_design_const_out").
 
-		Vertex("feedback_const").Op("StringConstOp").
+		Vertex("feedback_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": feedback}).
 		Output("Result", "feedback_const_out").
 
@@ -63,18 +63,18 @@ func buildRefineDAG(prompt, library, prevDesign, feedback string) (*graph.Graph,
 		Build()
 }
 
-// buildCodegenDAG constructs the Phase 3 DAG using StringConstOp for the three known values.
+// buildCodegenDAG constructs the Phase 3 DAG using ConstStringOp for the three known values.
 func buildCodegenDAG(prompt, library, approvedDesign, dagAIModulePath string) (*graph.Graph, error) {
 	return graph.NewBuilder("codegen_dag").
-		Vertex("prompt_const").Op("StringConstOp").
+		Vertex("prompt_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": prompt}).
 		Output("Result", "prompt_const_out").
 
-		Vertex("library_const").Op("StringConstOp").
+		Vertex("library_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": library}).
 		Output("Result", "library_const_out").
 
-		Vertex("design_const").Op("StringConstOp").
+		Vertex("design_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": approvedDesign}).
 		Output("Result", "design_const_out").
 

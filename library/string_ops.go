@@ -12,8 +12,6 @@ import (
 	"github.com/wwz16/dagor/operator"
 )
 
-const StringConstOpDescription = "StringConstOp: injects a constant string value. Params: Value string. Output: Result string."
-
 const StringLookupOpDescription = `StringLookupOp: looks up Key in a hardcoded string→string map; returns "" on miss.
   Params: map — JSON-encoded key→value pairs (e.g. {"hamburger":"ketchup","hotdog":"mustard"}).
   Input:  Key *string.
@@ -24,23 +22,6 @@ const AIComputeStringToStringOpDescription = `AIComputeStringToStringOp: AI-powe
             max_retries string — parse retries (default "3").
   Inputs:   Input *string — the query string.
   Outputs:  Result string, Reasoning string.`
-
-// StringConstOp injects a constant string value into the graph.
-type StringConstOp struct {
-	Result string `dag:"output"`
-	value  string
-}
-
-func (op *StringConstOp) Setup(params *config.Params) error {
-	op.value = params.GetString("Value", "")
-	return nil
-}
-func (op *StringConstOp) Reset() error { return nil }
-func (op *StringConstOp) Run(ctx context.Context) error {
-	op.Result = op.value
-	log.Printf("[DEBUG] StringConstOp: value=%q", op.Result)
-	return nil
-}
 
 // StringLookupOp looks up Key in a params-configured map.
 // Returns "" when the key is not found, acting as the "no deterministic result" sentinel.
@@ -223,7 +204,6 @@ type AIComputeStringToStringOp struct {
 }
 
 func init() {
-	operator.RegisterOp[StringConstOp]()
 	operator.RegisterOp[StringLookupOp]()
 	operator.RegisterOp[StringToLowerOp]()
 	operator.RegisterOp[StringConcatOp]()

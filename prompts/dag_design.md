@@ -58,6 +58,44 @@ RIGHT (in the design):
   …same shape for bug, feature, other lanes…
   CoalesceN*Op (n=4, MergeCoalesce): {billing_json, bug_json, feature_json, other_json} → final
 
+# BOOLEAN SELECTION — SelectStringOp vs CoalesceOp
+These two ops solve different problems. Confusing them is a common design error.
+
+**CoalesceOp** (with `Merge: coalesce`): merge N conditional branches where upstream vertices may be
+SKIPPED by predicates. Exactly one branch fires; the others produce nil; CoalesceOp picks the non-nil.
+
+**SelectStringOp**: always-running deterministic ternary. Takes a `*bool` wire at runtime and returns
+one of two non-nil input wires. No predicate, no skip propagation. Use this when BOTH inputs always
+exist and the choice is driven by a runtime bool result — NOT by whether an upstream vertex was skipped.
+
+Common use — orthogonal bool probe appends an optional suffix to the main output:
+```
+bool_probe → SelectStringOp(Cond=bool, IfTrue="", IfFalse=warning_text) → suffix
+main_pipeline_output + suffix → StringConcatOp → final_output
+```
+
+WRONG — forcing SelectStringOp into the coalesce pattern:
+  has_tests → CoalesceOp(A=warning_branch, B=empty_branch, MergeCoalesce)   ← neither branch is skipped
+
+RIGHT:
+  has_tests_wire → SelectStringOp(IfTrue=empty_const, IfFalse=warning_const) → warning_suffix
+  StringConcatOp(narrative + warning_suffix) → final_narrative
+
+# PARALLEL HTTP FETCH WITH STATUS-CODE FALLBACK
+When fetching from two URLs (e.g. a "main" branch and a "master" branch), run BOTH HTTPGetOp calls
+in parallel (no condition on either), then use IfIntEqOp + SelectStringOp to pick the winner based
+on the HTTP status code. Do NOT use OnError(continue) + MergeCoalesce for this — that pattern only
+fires when one branch errors out; it fails silently when both succeed and returns the wrong body.
+
+Correct pattern:
+```
+HTTPGetOp(url_a) → body_a, status_a    ─┐ both run in parallel
+HTTPGetOp(url_b) → body_b, status_b    ─┘
+IntConstOp(200) → int_200
+IfIntEqOp(status_a == int_200) → a_ok          (bool)
+SelectStringOp(Cond=a_ok, IfTrue=body_a, IfFalse=body_b) → selected_body
+```
+
 # MANDATORY EXCEPTION — MULTI-TOKEN NATURAL LANGUAGE PARSING:
 Any input that consists of multi-word (multi-token) natural language — phrases, sentences, or free-form
 text where meaning depends on the combination and order of words — MUST be handled by an AI op.

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/wwz16/dagor/operator/builtin"
+
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
@@ -542,7 +544,7 @@ func TestPredicateDescriptions_NonEmpty(t *testing.T) {
 // collisions.
 
 // Pre-Run intercept: emit a constant from a const op to feed predicates.
-// We reuse ConstOp / StringConstOp from the existing library.
+// We use ConstFloat64Op / ConstStringOp from the dagor builtin package.
 
 func newTestPool(t *testing.T) *ants.Pool {
 	t.Helper()
@@ -583,14 +585,14 @@ func getBool(t *testing.T, eng *dagor.Engine, wire string) bool {
 }
 
 // TestPredicateOps_Integration_IfFloatGt builds:
-//   ConstOp(A=5) ──► IfFloatGtOp(A,B=3) ──► Match wire
-//   ConstOp(B=3) ──┘
+//   ConstFloat64Op(A=5) ──► IfFloatGtOp(A,B=3) ──► Match wire
+//   ConstFloat64Op(B=3) ──┘
 func TestPredicateOps_Integration_IfFloatGt(t *testing.T) {
 	g, err := graph.NewBuilder("if_float_gt_demo").
-		Vertex("a_const").Op("ConstOp").
+		Vertex("a_const").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "5"}).
 		Output("Result", "a_val").
-		Vertex("b_const").Op("ConstOp").
+		Vertex("b_const").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "3"}).
 		Output("Result", "b_val").
 		Vertex("cmp").Op("IfFloatGtOp").
@@ -609,9 +611,9 @@ func TestPredicateOps_Integration_IfFloatGt(t *testing.T) {
 // TestPredicateOps_Integration_BetweenFloat builds a range check.
 func TestPredicateOps_Integration_BetweenFloat(t *testing.T) {
 	g, err := graph.NewBuilder("between_float_demo").
-		Vertex("v").Op("ConstOp").Params(map[string]string{"Value": "5"}).Output("Result", "v_w").
-		Vertex("lo").Op("ConstOp").Params(map[string]string{"Value": "1"}).Output("Result", "lo_w").
-		Vertex("hi").Op("ConstOp").Params(map[string]string{"Value": "10"}).Output("Result", "hi_w").
+		Vertex("v").Op("ConstFloat64Op").Params(map[string]string{"Value": "5"}).Output("Result", "v_w").
+		Vertex("lo").Op("ConstFloat64Op").Params(map[string]string{"Value": "1"}).Output("Result", "lo_w").
+		Vertex("hi").Op("ConstFloat64Op").Params(map[string]string{"Value": "10"}).Output("Result", "hi_w").
 		Vertex("between").Op("BetweenFloatOp").
 		Input("Value", "v_w").Input("Min", "lo_w").Input("Max", "hi_w").
 		Output("Match", "match").
@@ -628,10 +630,10 @@ func TestPredicateOps_Integration_BetweenFloat(t *testing.T) {
 // TestPredicateOps_Integration_IfStringContains exercises a string predicate.
 func TestPredicateOps_Integration_IfStringContains(t *testing.T) {
 	g, err := graph.NewBuilder("if_string_contains_demo").
-		Vertex("a_const").Op("StringConstOp").
+		Vertex("a_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": "hello world"}).
 		Output("Result", "a_val").
-		Vertex("b_const").Op("StringConstOp").
+		Vertex("b_const").Op("ConstStringOp").
 		Params(map[string]string{"Value": "world"}).
 		Output("Result", "b_val").
 		Vertex("contains").Op("IfStringContainsOp").
@@ -650,7 +652,7 @@ func TestPredicateOps_Integration_IfStringContains(t *testing.T) {
 // TestPredicateOps_Integration_IfStringRegexMatch exercises a Setup-param op.
 func TestPredicateOps_Integration_IfStringRegexMatch(t *testing.T) {
 	g, err := graph.NewBuilder("if_regex_demo").
-		Vertex("input").Op("StringConstOp").
+		Vertex("input").Op("ConstStringOp").
 		Params(map[string]string{"Value": "555-1234"}).
 		Output("Result", "input_w").
 		Vertex("re").Op("IfStringRegexMatchOp").
@@ -675,7 +677,7 @@ func TestPredicateOps_Integration_IfStringRegexMatch(t *testing.T) {
 //   a=10 ──► IfFloatGtOp(A,B=3) ──► match wire
 //   b=3  ──┘                         │
 //                                    ▼ (predicate reads "match")
-//                              ConstOp(99) ──► out_w   (only runs when match=true)
+//                              ConstFloat64Op(99) ──► out_w   (only runs when match=true)
 func TestPredicateOps_Integration_PredicateBranching(t *testing.T) {
 	const predName = "test_match_is_true"
 	predicate.Unregister(predName) // safe even if not registered
@@ -688,16 +690,16 @@ func TestPredicateOps_Integration_PredicateBranching(t *testing.T) {
 	defer predicate.Unregister(predName)
 
 	g, err := graph.NewBuilder("predicate_branching_demo").
-		Vertex("a_const").Op("ConstOp").
+		Vertex("a_const").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "10"}).
 		Output("Result", "a_val").
-		Vertex("b_const").Op("ConstOp").
+		Vertex("b_const").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "3"}).
 		Output("Result", "b_val").
 		Vertex("cmp").Op("IfFloatGtOp").
 		Input("A", "a_val").Input("B", "b_val").
 		Output("Match", "match").
-		Vertex("downstream").Op("ConstOp").
+		Vertex("downstream").Op("ConstFloat64Op").
 		Condition(predName).
 		ConditionInput("match"). // wire match into predicate's inputs map without setting any op field
 		Params(map[string]string{"Value": "99"}).
@@ -735,16 +737,16 @@ func TestPredicateOps_Integration_PredicateBranching_Skipped(t *testing.T) {
 	defer predicate.Unregister(predName)
 
 	g, err := graph.NewBuilder("predicate_branching_skip_demo").
-		Vertex("a_const").Op("ConstOp").
+		Vertex("a_const").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "1"}).
 		Output("Result", "a_val").
-		Vertex("b_const").Op("ConstOp").
+		Vertex("b_const").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "10"}).
 		Output("Result", "b_val").
 		Vertex("cmp").Op("IfFloatGtOp").
 		Input("A", "a_val").Input("B", "b_val").
 		Output("Match", "match").
-		Vertex("downstream").Op("ConstOp").
+		Vertex("downstream").Op("ConstFloat64Op").
 		Condition(predName).
 		ConditionInput("match").
 		Params(map[string]string{"Value": "99"}).

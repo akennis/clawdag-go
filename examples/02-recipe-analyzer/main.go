@@ -120,13 +120,13 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 	switch opts.mode {
 	case sourceFixture:
 		vb = b.
-			Vertex("body_const").Op("StringConstOp").
+			Vertex("body_const").Op("ConstStringOp").
 			Params(map[string]string{"Value": opts.body}).
 			Output("Result", "raw_json")
 	case sourceLive:
 		fullURL := "https://www.themealdb.com/api/json/v1/1/search.php?s=" + url.QueryEscape(opts.mealArg)
 		vb = b.
-			Vertex("url_const").Op("StringConstOp").
+			Vertex("url_const").Op("ConstStringOp").
 			Params(map[string]string{"Value": fullURL}).
 			Output("Result", "url").
 
@@ -138,11 +138,11 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 
 	// Stage 2 — pull instructions and meal name out of the JSON.
 	vb = vb.
-		Vertex("path_instructions").Op("StringConstOp").
+		Vertex("path_instructions").Op("ConstStringOp").
 		Params(map[string]string{"Value": "meals.0.strInstructions"}).
 		Output("Result", "path_instructions").
 
-		Vertex("path_mealname").Op("StringConstOp").
+		Vertex("path_mealname").Op("ConstStringOp").
 		Params(map[string]string{"Value": "meals.0.strMeal"}).
 		Output("Result", "path_mealname").
 
@@ -189,11 +189,11 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 		Input("Value", "step_count_int").
 		Output("Result", "step_count_f").
 
-		Vertex("step_weight").Op("ConstOp").
+		Vertex("step_weight").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "1.5"}).
 		Output("Result", "step_weight").
 
-		Vertex("cook_weight").Op("ConstOp").
+		Vertex("cook_weight").Op("ConstFloat64Op").
 		Params(map[string]string{"Value": "0.1"}).
 		Output("Result", "cook_weight").
 

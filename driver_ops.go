@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	dagailib "github.com/akennis/clawdag-go/library"
+	_ "github.com/wwz16/dagor/operator/builtin"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -117,20 +118,18 @@ func (op *LibraryScanOp) Reset() error                      { return nil }
 func (op *LibraryScanOp) Run(ctx context.Context) error {
 	log.Printf("[DEBUG] LibraryScanOp: collecting library op descriptions")
 	op.LibraryDescription = strings.Join([]string{
-		dagailib.ConstOpDescription,
 		dagailib.AddOpDescription,
 		dagailib.SubOpDescription,
 		dagailib.DivOpDescription,
 		dagailib.PackMathOperandsOpDescription,
 		dagailib.AIComputeMathOperandsToFloat64OpDescription,
-		dagailib.StringConstOpDescription,
 		dagailib.StringLookupOpDescription,
 		dagailib.StringToLowerOpDescription,
 		dagailib.AIComputeStringToStringOpDescription,
 		dagailib.CityTimeOpDescription,
 		dagailib.ModeSelectOpDescription,
 	}, "\n")
-	log.Printf("[DEBUG] LibraryScanOp: loaded %d ops", 12)
+	log.Printf("[DEBUG] LibraryScanOp: loaded %d ops", 10)
 	return nil
 }
 
