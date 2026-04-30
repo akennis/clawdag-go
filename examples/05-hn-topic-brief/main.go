@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/akennis/clawdag-go/library"   // registers library ops
+	"github.com/akennis/clawdag-go/library"      // registers library ops
 	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp
 
 	"github.com/panjf2000/ants/v2"
@@ -246,10 +246,11 @@ func registerPredicates() {
 func buildGraph(responseJSON, query string) (*graph.Graph, error) {
 	b := graph.NewBuilder("hn_topic_brief")
 
+	library.RegisterConst("response_const", responseJSON)
+
 	// ── Stage 1: inject API response and extract titles ───────────────────────
 	b.
-		Vertex("response_const").Op("ConstStringOp").
-		Params(map[string]string{"Value": responseJSON}).
+		Vertex("response_const").Op("response_const").
 		Output("Result", "response_json").
 
 		Vertex("extract_titles").Op("ExtractTitlesOp").

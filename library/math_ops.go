@@ -27,7 +27,17 @@ type AddOp struct {
 	Result float64  `dag:"output"`
 }
 
-func (op *AddOp) Setup(params *config.Params) error { return nil }
+func (op *AddOp) Setup(params *config.Params) error {
+	if params.Exists("A") {
+		a := params.GetFloat64("A", 0)
+		op.A = &a
+	}
+	if params.Exists("B") {
+		b := params.GetFloat64("B", 0)
+		op.B = &b
+	}
+	return nil
+}
 func (op *AddOp) Reset() error                      { return nil }
 func (op *AddOp) Run(_ context.Context) error {
 	op.Result = *op.A + *op.B

@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"time"
 
-	_ "github.com/akennis/clawdag-go/library"   // registers library ops
-	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp, ConstIntOp, etc.
+	"github.com/akennis/clawdag-go/library"      // registers library ops
+	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
@@ -133,24 +133,29 @@ type buildOpts struct {
 func buildGraph(opts buildOpts) (*graph.Graph, error) {
 	b := graph.NewBuilder("readme_quality")
 
+	library.RegisterConst("const_200", 200)
+	library.RegisterConst("const_2", 2.0)
+	library.RegisterConst("warning_const", "\n\nWARNING: tests not mentioned")
+	library.RegisterConst("empty_const", "")
+
 	// ── Stage 1: produce `readme_raw` ─────────────────────────────────────────
 	// Fixture mode injects the file contents directly; live mode does two
 	// parallel HTTP fetches and selects whichever returned HTTP 200.
 	switch opts.mode {
 	case sourceFixture:
+		library.RegisterConst("readme_const", opts.body)
 		b.
-			Vertex("readme_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": opts.body}).
+			Vertex("readme_const").Op("readme_const").
 			Output("Result", "readme_raw")
 
 	case sourceLive:
+		library.RegisterConst("main_url_const", opts.mainURL)
+		library.RegisterConst("master_url_const", opts.masterURL)
 		b.
-			Vertex("main_url_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": opts.mainURL}).
+			Vertex("main_url_const").Op("main_url_const").
 			Output("Result", "main_url").
 
-			Vertex("master_url_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": opts.masterURL}).
+			Vertex("master_url_const").Op("master_url_const").
 			Output("Result", "master_url").
 
 			// Both fetches run in parallel (no Condition).
@@ -163,12 +168,10 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 			Input("URL", "master_url").
 			Output("Body", "master_body").
 
-			// IfIntEqOp needs a constant int 200 as its second operand.
-			Vertex("const_200").Op("ConstIntOp").
-			Params(map[string]string{"Value": "200"}).
+			// Gate: did the main-branch fetch return HTTP 200?
+			Vertex("const_200").Op("const_200").
 			Output("Result", "int_200").
 
-			// Gate: did the main-branch fetch return HTTP 200?
 			Vertex("check_main").Op("IfIntEqOp").
 			Input("A", "main_status").
 			Input("B", "int_200").
@@ -225,8 +228,7 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 		Input("B", "clarity_score").
 		Output("Result", "sum_scores_val").
 
-		Vertex("const_2").Op("ConstFloat64Op").
-		Params(map[string]string{"Value": "2.0"}).
+		Vertex("const_2").Op("const_2").
 		Output("Result", "two_f").
 
 		Vertex("avg_score_op").Op("DivOp").
@@ -282,12 +284,10 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 
 		// "WARNING: tests not mentioned" — injected when has_tests is false.
 		// SelectStringOp(cond=has_tests, ifTrue="", ifFalse=warning_text)
-		Vertex("warning_const").Op("ConstStringOp").
-		Params(map[string]string{"Value": "\n\nWARNING: tests not mentioned"}).
+		Vertex("warning_const").Op("warning_const").
 		Output("Result", "warning_text").
 
-		Vertex("empty_const").Op("ConstStringOp").
-		Params(map[string]string{"Value": ""}).
+		Vertex("empty_const").Op("empty_const").
 		Output("Result", "empty_text").
 
 		Vertex("test_warning").Op("SelectStringOp").

@@ -12,7 +12,7 @@ import (
 )
 
 const SliceLenOpDescription = "SliceLenOp: returns the length of a string slice. Input: Input *[]string. Output: Result int."
-const SliceAtOpDescription = "SliceAtOp: returns the element at a given index. Param: index (int). Input: Input *[]string. Output: Result string."
+const SliceAtOpDescription = "SliceAtOp: returns the element at a given index. Param: index (int, used when Index wire is absent). Inputs: Input *[]string, Index *int (optional wire). Output: Result string."
 const SliceFirstOpDescription = "SliceFirstOp: returns the first element. Input: Input *[]string. Output: Result string. Error if empty."
 const SliceLastOpDescription = "SliceLastOp: returns the last element. Input: Input *[]string. Output: Result string. Error if empty."
 const SliceContainsOpDescription = "SliceContainsOp: reports whether a slice contains a value. Inputs: Input *[]string, Value *string. Output: Match bool."
@@ -48,6 +48,7 @@ func (op *SliceLenOp) ResetFields() { op.Input = nil; op.Result = 0 }
 
 type SliceAtOp struct {
 	Input  *[]string
+	Index  *int
 	Result string
 	index  int
 }
@@ -63,27 +64,42 @@ func (op *SliceAtOp) Setup(params *config.Params) error {
 }
 func (op *SliceAtOp) Reset() error { return nil }
 func (op *SliceAtOp) Run(_ context.Context) error {
-	sl := *op.Input
-	if op.index < 0 || op.index >= len(sl) {
-		return fmt.Errorf("SliceAtOp: index %d out of range (len %d)", op.index, len(sl))
+	idx := op.index
+	if op.Index != nil {
+		idx = *op.Index
 	}
-	op.Result = sl[op.index]
+	sl := *op.Input
+	if idx < 0 || idx >= len(sl) {
+		return fmt.Errorf("SliceAtOp: index %d out of range (len %d)", idx, len(sl))
+	}
+	op.Result = sl[idx]
 	return nil
 }
-func (op *SliceAtOp) InputFields() map[string]any { return map[string]any{"Input": &op.Input} }
+func (op *SliceAtOp) InputFields() map[string]any {
+	return map[string]any{"Input": &op.Input, "Index": &op.Index}
+}
 func (op *SliceAtOp) OutputFields() map[string]any { return map[string]any{"Result": &op.Result} }
 func (op *SliceAtOp) SetInputField(field string, value any) error {
-	if field != "Input" {
+	switch field {
+	case "Input":
+		val, ok := value.(*[]string)
+		if !ok {
+			return fmt.Errorf("field Input: expected *[]string, got %T", value)
+		}
+		op.Input = val
+	case "Index":
+		val, ok := value.(*int)
+		if !ok {
+			return fmt.Errorf("field Index: expected *int, got %T", value)
+		}
+		op.Index = val
+	default:
 		return fmt.Errorf("field %s is not defined", field)
 	}
-	val, ok := value.(*[]string)
-	if !ok {
-		return fmt.Errorf("field Input: expected *[]string, got %T", value)
-	}
-	op.Input = val
 	return nil
 }
-func (op *SliceAtOp) ResetFields() { op.Input = nil; op.Result = "" }
+func (op *SliceAtOp) ResetFields() { op.Input = nil; op.Index = nil; op.Result = "" }
+
 
 type SliceFirstOp struct {
 	Input  *[]string

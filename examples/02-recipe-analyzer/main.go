@@ -19,8 +19,8 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/akennis/clawdag-go/library"   // registers library ops
-	_ "github.com/wwz16/dagor/operator/builtin" // registers built-ins
+	"github.com/akennis/clawdag-go/library"      // registers library ops
+	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
@@ -117,19 +117,24 @@ type buildOpts struct {
 func buildGraph(opts buildOpts) (*graph.Graph, error) {
 	b := graph.NewBuilder("recipe_analyzer")
 
+	library.RegisterConst("path_instructions", "meals.0.strInstructions")
+	library.RegisterConst("path_mealname", "meals.0.strMeal")
+	library.RegisterConst("step_weight", 1.5)
+	library.RegisterConst("cook_weight", 0.1)
+
 	// Stage 1 — produce a single wire `raw_json` containing the API response.
 	var vb *graph.VertexBuilder
 	switch opts.mode {
 	case sourceFixture:
+		library.RegisterConst("body_const", opts.body)
 		vb = b.
-			Vertex("body_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": opts.body}).
+			Vertex("body_const").Op("body_const").
 			Output("Result", "raw_json")
 	case sourceLive:
 		fullURL := "https://www.themealdb.com/api/json/v1/1/search.php?s=" + url.QueryEscape(opts.mealArg)
+		library.RegisterConst("url_const", fullURL)
 		vb = b.
-			Vertex("url_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": fullURL}).
+			Vertex("url_const").Op("url_const").
 			Output("Result", "url").
 
 			Vertex("fetch").Op("HTTPGetOp").
@@ -140,12 +145,10 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 
 	// Stage 2 — pull instructions and meal name out of the JSON.
 	vb = vb.
-		Vertex("path_instructions").Op("ConstStringOp").
-		Params(map[string]string{"Value": "meals.0.strInstructions"}).
+		Vertex("path_instructions").Op("path_instructions").
 		Output("Result", "path_instructions").
 
-		Vertex("path_mealname").Op("ConstStringOp").
-		Params(map[string]string{"Value": "meals.0.strMeal"}).
+		Vertex("path_mealname").Op("path_mealname").
 		Output("Result", "path_mealname").
 
 		Vertex("extract_instructions").Op("JSONExtractOp").
@@ -191,12 +194,10 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 		Input("Value", "step_count_int").
 		Output("Result", "step_count_f").
 
-		Vertex("step_weight").Op("ConstFloat64Op").
-		Params(map[string]string{"Value": "1.5"}).
+		Vertex("step_weight").Op("step_weight").
 		Output("Result", "step_weight").
 
-		Vertex("cook_weight").Op("ConstFloat64Op").
-		Params(map[string]string{"Value": "0.1"}).
+		Vertex("cook_weight").Op("cook_weight").
 		Output("Result", "cook_weight").
 
 		Vertex("step_term").Op("MulOp").

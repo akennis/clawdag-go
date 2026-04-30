@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/akennis/clawdag-go/library"   // registers library ops
-	_ "github.com/wwz16/dagor/operator/builtin" // registers built-ins
+	"github.com/akennis/clawdag-go/library"      // registers library ops
+	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"
@@ -331,11 +331,12 @@ func registerPredicates() {
 // ─── Graph ─────────────────────────────────────────────────────────────────
 
 func buildGraph(ticketBody string) (*graph.Graph, error) {
+	library.RegisterConst("body_const", ticketBody)
+
 	return graph.NewBuilder("ticket_triage").
 
 		// Inject the ticket body as a constant string.
-		Vertex("body_const").Op("ConstStringOp").
-		Params(map[string]string{"Value": ticketBody}).
+		Vertex("body_const").Op("body_const").
 		Output("Result", "ticket_body").
 
 		// Classify into one of 4 categories via a single AI call.

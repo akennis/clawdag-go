@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/akennis/clawdag-go/library"   // registers library ops
+	"github.com/akennis/clawdag-go/library"      // registers library ops
 	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp
 
 	"github.com/panjf2000/ants/v2"
@@ -188,16 +188,21 @@ type buildOpts struct {
 func buildGraph(opts buildOpts) (*graph.Graph, error) {
 	b := graph.NewBuilder("weather_advisor")
 
+	library.RegisterConst("precip_thresh", 0.1)
+	library.RegisterConst("wind_thresh", 25.0)
+	library.RegisterConst("warning_const", "  ⚠ unusual weather")
+	library.RegisterConst("empty_const", "")
+
 	// Stage 1 — produce a single `body` wire containing the wttr.in j1 JSON.
 	switch opts.mode {
 	case sourceFixture:
-		b.Vertex("body_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": opts.body}).
+		library.RegisterConst("body_const", opts.body)
+		b.Vertex("body_const").Op("body_const").
 			Output("Result", "body")
 	case sourceLive:
 		fullURL := "https://wttr.in/" + url.PathEscape(opts.cityArg) + "?format=j1"
-		b.Vertex("url_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": fullURL}).
+		library.RegisterConst("url_const", fullURL)
+		b.Vertex("url_const").Op("url_const").
 			Output("Result", "url")
 		b.Vertex("fetch").Op("HTTPGetOp").
 			Input("URL", "url").
@@ -213,8 +218,8 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 		{"current_condition.0.weatherDesc.0.value", "desc_str"},
 	} {
 		pathWire := f.wire + "_path"
-		b.Vertex(pathWire).Op("ConstStringOp").
-			Params(map[string]string{"Value": f.path}).
+		library.RegisterConst(pathWire, f.path)
+		b.Vertex(pathWire).Op(pathWire).
 			Output("Result", pathWire)
 		b.Vertex("extract_"+f.wire).Op("JSONExtractOp").
 			Input("JSON", "body").
@@ -238,15 +243,15 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 		Input("Input", "wind_str").
 		Output("Result", "wind_kph")
 
-	// Stage 4 — deterministic temperature band via three guarded StringConstOps
+	// Stage 4 — deterministic temperature band via three guarded ConstOps
 	// and a CoalesceNStringOp merger (exactly one will run per execution).
 	for _, band := range []struct{ name, cond string }{
 		{"cold", "temp_is_cold"},
 		{"mild", "temp_is_mild"},
 		{"hot", "temp_is_hot"},
 	} {
-		b.Vertex(band.name+"_const").Op("ConstStringOp").
-			Params(map[string]string{"Value": band.name}).
+		library.RegisterConst(band.name+"_const", band.name)
+		b.Vertex(band.name+"_const").Op(band.name+"_const").
 			Condition(band.cond).
 			ConditionInput("temp_c").
 			Output("Result", band.name+"_band")
@@ -260,16 +265,14 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 		Output("Result", "band")
 
 	// Stage 5 — deterministic wet / windy boolean flags.
-	b.Vertex("precip_thresh").Op("ConstFloat64Op").
-		Params(map[string]string{"Value": "0.1"}).
+	b.Vertex("precip_thresh").Op("precip_thresh").
 		Output("Result", "precip_thresh")
 	b.Vertex("wet_check").Op("IfFloatGtOp").
 		Input("A", "precip_mm").
 		Input("B", "precip_thresh").
 		Output("Match", "wet")
 
-	b.Vertex("wind_thresh").Op("ConstFloat64Op").
-		Params(map[string]string{"Value": "25.0"}).
+	b.Vertex("wind_thresh").Op("wind_thresh").
 		Output("Result", "wind_thresh")
 	b.Vertex("windy_check").Op("IfFloatGtOp").
 		Input("A", "wind_kph").
@@ -305,12 +308,10 @@ func buildGraph(opts buildOpts) (*graph.Graph, error) {
 		Input("Input", "desc_str").
 		Output("Result", "unusual_flag")
 
-	b.Vertex("warning_const").Op("ConstStringOp").
-		Params(map[string]string{"Value": "  ⚠ unusual weather"}).
+	b.Vertex("warning_const").Op("warning_const").
 		Output("Result", "warning_str")
 
-	b.Vertex("empty_const").Op("ConstStringOp").
-		Params(map[string]string{"Value": ""}).
+	b.Vertex("empty_const").Op("empty_const").
 		Output("Result", "empty_str")
 
 	b.Vertex("warning_select").Op("SelectStringOp").

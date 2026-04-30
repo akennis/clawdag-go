@@ -123,12 +123,11 @@ StringConstOp (design) ───────┴──► GenerateOp → go_files
 
 | Op | Kind | Description |
 |----|------|-------------|
-| `ConstOp` | deterministic | Injects a constant `float64` |
+| `ConstOp[T]` (via `RegisterConst`) | deterministic | Emits any Go value as a source wire — see [Injecting values](#injecting-values) |
 | `AddOp` | deterministic | Addition |
 | `SubOp` | deterministic | Subtraction |
 | `DivOp` | deterministic | Division (errors on zero divisor) |
 | `PackMathOperandsOp` | deterministic | Packs two `float64` inputs into a `MathOperands` struct |
-| `StringConstOp` | deterministic | Injects a constant string |
 | `StringLookupOp` | deterministic | Looks up a key in a configurable map; returns `""` on miss |
 | `StringToLowerOp` | deterministic | Lowercases a string |
 | `CityTimeOp` | deterministic | Returns the current time for "New York" or "Tokyo" |
@@ -201,6 +200,29 @@ When compilation succeeds, the driver packages the binary into a `.mcpb` archive
 The manifest includes `user_config` entries for any environment variables detected via `EnvScanOp`.
 
 ## Extending the Library
+
+### Injecting values
+
+Every wire value in a dagor graph must be produced by an operator — there is no runtime injection API. To feed a Go value into a graph, use `RegisterConst`:
+
+```go
+library.RegisterConst("my_items", []string{"foo", "bar", "baz"})
+library.RegisterConst("threshold", 0.75)
+
+g, _ := graph.NewBuilder("my_graph").
+    Vertex("items_src").Op("my_items").Output("Result", "items").
+    Vertex("threshold_src").Op("threshold").Output("Result", "threshold").
+    // ... downstream vertices consume "items" and "threshold" wires
+    Build()
+```
+
+`RegisterConst[T]` registers a factory under the given name that emits the captured value on every run. It works for any type `T` — scalars, slices, structs — with no serialization or `Setup` changes required.
+
+**Params vs `RegisterConst`**
+
+Use **params** for static configuration that is part of the op's definition: operation names, map keys, numeric thresholds, flags. Params are JSON-encoded into the graph config and read by the op's `Setup` method, so they only work for JSON-representable types and require the op to explicitly parse them.
+
+Use **`RegisterConst`** when you already have a value as a Go variable at graph-build time. It is the right default whenever you need to introduce a value that is not part of an op's fixed configuration — runtime inputs, user-supplied data, slices, or any type that is awkward to serialize.
 
 ### Adding a deterministic op
 
@@ -325,8 +347,9 @@ clawdag-go/
 │   ├── dag_validation_error_context.md
 │   └── mcpb_manifest_ai.md
 ├── library/
-│   ├── math_ops.go       — AddOp, SubOp, DivOp, ConstOp, PackMathOperandsOp
-│   ├── string_ops.go     — StringConstOp, StringLookupOp, StringToLowerOp, AIComputeStringToStringOp
+│   ├── const_op.go       — ConstOp[T] + RegisterConst (generic value injection)
+│   ├── math_ops.go       — AddOp, SubOp, DivOp, PackMathOperandsOp
+│   ├── string_ops.go     — StringLookupOp, StringToLowerOp, AIComputeStringToStringOp
 │   ├── time_ops.go       — CityTimeOp
 │   ├── mode_select_op.go — ModeSelectOp
 │   ├── ai_compute_op.go  — generic AIComputeOp[In, Out] base
