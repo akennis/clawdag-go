@@ -99,19 +99,8 @@ func (op *LibraryScanOp) Setup(params *config.Params) error { return nil }
 func (op *LibraryScanOp) Reset() error                      { return nil }
 func (op *LibraryScanOp) Run(ctx context.Context) error {
 	slog.DebugContext(ctx, "LibraryScanOp.run", "run_id", dagor.RunID(ctx))
-	op.LibraryDescription = strings.Join([]string{
-		dagailib.AddOpDescription,
-		dagailib.SubOpDescription,
-		dagailib.DivOpDescription,
-		dagailib.PackMathOperandsOpDescription,
-		dagailib.AIComputeMathOperandsToFloat64OpDescription,
-		dagailib.StringLookupOpDescription,
-		dagailib.StringToLowerOpDescription,
-		dagailib.AIComputeStringToStringOpDescription,
-		dagailib.CityTimeOpDescription,
-		dagailib.ModeSelectOpDescription,
-	}, "\n")
-	slog.DebugContext(ctx, "LibraryScanOp.done", "run_id", dagor.RunID(ctx), "op_count", 10)
+	op.LibraryDescription = dagailib.AllDescriptions()
+	slog.DebugContext(ctx, "LibraryScanOp.done", "run_id", dagor.RunID(ctx), "op_count", 71)
 	return nil
 }
 
