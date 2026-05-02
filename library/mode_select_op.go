@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
@@ -19,6 +16,8 @@ import (
 const ModeSelectOpDescription = `ModeSelectOp: AI-powered classifier — maps arbitrary input text to exactly one of a fixed set of categories.
   Params:   categories string — comma-separated list of valid output values (e.g. "arithmetic expression,city name").
             max_retries string — parse/validation retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string — the text to classify.
   Outputs:  Result string — exactly one of the specified categories.`
 
@@ -31,6 +30,9 @@ type ModeSelectOp struct {
 
 	categories []string
 	maxRetries int
+	provider   string
+	model      string
+	caller     aiCaller
 }
 
 func (op *ModeSelectOp) Setup(params *config.Params) error {
@@ -53,6 +55,13 @@ func (op *ModeSelectOp) Setup(params *config.Params) error {
 			op.maxRetries = n
 		}
 	}
+	op.provider = params.GetString("provider", "claude")
+	op.model = params.GetString("model", "claude-sonnet-4-6")
+	caller, err := newAICaller(op.provider, op.model)
+	if err != nil {
+		return fmt.Errorf("ModeSelectOp: %w", err)
+	}
+	op.caller = caller
 	return nil
 }
 
@@ -62,8 +71,6 @@ func (op *ModeSelectOp) Run(ctx context.Context) error {
 	slog.DebugContext(ctx, "ModeSelectOp.run", "run_id", dagor.RunID(ctx), "categories", op.categories)
 
 	isReasoning := logFromCtx(ctx) != nil
-	apiKey := os.Getenv("CLAUDE_API_KEY")
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
 	catList := strings.Join(op.categories, ", ")
 	basePrompt := fmt.Sprintf(
@@ -92,28 +99,17 @@ func (op *ModeSelectOp) Run(ctx context.Context) error {
 		if isReasoning {
 			maxTokens = 512
 		}
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
-			MaxTokens: maxTokens,
-			System: []anthropic.TextBlockParam{
-				{Text: systemText},
-			},
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+		res, err := op.caller.call(ctx, aiCallRequest{
+			SystemText: systemText,
+			Prompt:     prompt,
+			MaxTokens:  maxTokens,
 		})
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
-		slog.InfoContext(ctx, "ModeSelectOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
+		slog.InfoContext(ctx, "ModeSelectOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", res.InputTokens, "output_tokens", res.OutputTokens)
 
-		var raw string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				raw += block.Text
-			}
-		}
-		raw = strings.TrimSpace(raw)
+		raw := strings.TrimSpace(res.Text)
 
 		var result, reasoning string
 		if isReasoning {

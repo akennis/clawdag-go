@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 	"github.com/wwz16/dagor/operator"
@@ -21,6 +18,8 @@ import (
 const AIExtractStringSliceOpDescription = `AIExtractStringSliceOp: AI-powered extraction of a list from text.
   Params:   operation string — plain-English description (e.g. "extract all ingredient names from this recipe").
             max_retries string — parse retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
   Outputs:  Result []string (CSV), Reasoning string.`
 
@@ -32,6 +31,8 @@ type AIExtractStringSliceOp struct {
 const AIExtractMapOpDescription = `AIExtractMapOp: AI-powered extraction of key-value pairs from text.
   Params:   operation string — plain-English description (e.g. "extract name, email, and city from this contact info").
             max_retries string — parse retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
   Outputs:  Result map[string]string (key=value CSV), Reasoning string.`
 
@@ -43,6 +44,8 @@ type AIExtractMapOp struct {
 const AIParseNumberOpDescription = `AIParseNumberOp: AI-powered number extraction — converts text to float64.
   Params:   operation string — plain-English description (default: leave empty to extract the number from the text).
             max_retries string — parse retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string (e.g. "two thousand", "$1.2k", "the price is 42").
   Outputs:  Result float64, Reasoning string.`
 
@@ -54,6 +57,8 @@ type AIParseNumberOp struct {
 const AISummarizeOpDescription = `AISummarizeOp: AI-powered summarization of a list of strings into one result string.
   Params:   operation string — plain-English instruction (e.g. "summarize into one concise sentence").
             max_retries string — parse retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *[]string — items to summarize.
   Outputs:  Result string, Reasoning string.`
 
@@ -67,6 +72,8 @@ type AISummarizeOp struct {
 const AIClassifyMultiLabelOpDescription = `AIClassifyMultiLabelOp: AI-powered multi-label classifier — maps input to zero or more categories.
   Params:   categories string — comma-separated list of valid labels (e.g. "billing,bug,feature,spam").
             max_retries string — parse/validation retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
   Outputs:  Result []string — subset of categories (CSV), Reasoning string.`
 
@@ -79,6 +86,9 @@ type AIClassifyMultiLabelOp struct {
 	categories []string
 	catSet     map[string]bool
 	maxRetries int
+	provider   string
+	model      string
+	caller     aiCaller
 }
 
 func (op *AIClassifyMultiLabelOp) Setup(params *config.Params) error {
@@ -104,6 +114,13 @@ func (op *AIClassifyMultiLabelOp) Setup(params *config.Params) error {
 			op.maxRetries = n
 		}
 	}
+	op.provider = params.GetString("provider", "claude")
+	op.model = params.GetString("model", "claude-sonnet-4-6")
+	caller, err := newAICaller(op.provider, op.model)
+	if err != nil {
+		return fmt.Errorf("AIClassifyMultiLabelOp: %w", err)
+	}
+	op.caller = caller
 	return nil
 }
 
@@ -138,10 +155,9 @@ func (op *AIClassifyMultiLabelOp) ResetFields() {
 }
 
 func (op *AIClassifyMultiLabelOp) Run(ctx context.Context) error {
-	slog.DebugContext(ctx, "AIClassifyMultiLabelOp.run", "run_id", dagor.RunID(ctx), "categories", op.categories)
+	slog.DebugContext(ctx, "AIClassifyMultiLabelOp.run", "run_id", dagor.RunID(ctx), "model", op.model, "categories", op.categories)
 
 	isReasoning := logFromCtx(ctx) != nil
-	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 	catList := strings.Join(op.categories, ", ")
 
 	var basePrompt string
@@ -167,28 +183,17 @@ func (op *AIClassifyMultiLabelOp) Run(ctx context.Context) error {
 	prompt := basePrompt
 	var lastErr string
 	for attempt := 0; attempt <= op.maxRetries; attempt++ {
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
-			MaxTokens: 256,
-			System: []anthropic.TextBlockParam{
-				{Text: systemText},
-			},
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+		res, err := op.caller.call(ctx, aiCallRequest{
+			SystemText: systemText,
+			Prompt:     prompt,
+			MaxTokens:  256,
 		})
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
-		slog.InfoContext(ctx, "AIClassifyMultiLabelOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
+		slog.InfoContext(ctx, "AIClassifyMultiLabelOp.tokens", "run_id", dagor.RunID(ctx), "model", op.model, "input_tokens", res.InputTokens, "output_tokens", res.OutputTokens)
 
-		var raw string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				raw += block.Text
-			}
-		}
-		raw = strings.TrimSpace(raw)
+		raw := strings.TrimSpace(res.Text)
 
 		var labelsCSV, reasoning string
 		if isReasoning {
@@ -247,6 +252,8 @@ func (op *AIClassifyMultiLabelOp) Run(ctx context.Context) error {
 const AIScoreOpDescription = `AIScoreOp: AI-powered scoring — returns a float64 in [0,1] measuring a criterion.
   Params:   criterion string — what to measure (e.g. "relevance to the query", "toxicity").
             max_retries string — parse/validation retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
   Outputs:  Result float64 ∈ [0,1], Reasoning string.`
 
@@ -258,6 +265,9 @@ type AIScoreOp struct {
 
 	criterion  string
 	maxRetries int
+	provider   string
+	model      string
+	caller     aiCaller
 }
 
 func (op *AIScoreOp) Setup(params *config.Params) error {
@@ -271,6 +281,13 @@ func (op *AIScoreOp) Setup(params *config.Params) error {
 			op.maxRetries = n
 		}
 	}
+	op.provider = params.GetString("provider", "claude")
+	op.model = params.GetString("model", "claude-sonnet-4-6")
+	caller, err := newAICaller(op.provider, op.model)
+	if err != nil {
+		return fmt.Errorf("AIScoreOp: %w", err)
+	}
+	op.caller = caller
 	return nil
 }
 
@@ -305,10 +322,9 @@ func (op *AIScoreOp) ResetFields() {
 }
 
 func (op *AIScoreOp) Run(ctx context.Context) error {
-	slog.DebugContext(ctx, "AIScoreOp.run", "run_id", dagor.RunID(ctx), "criterion", op.criterion)
+	slog.DebugContext(ctx, "AIScoreOp.run", "run_id", dagor.RunID(ctx), "model", op.model, "criterion", op.criterion)
 
 	isReasoning := logFromCtx(ctx) != nil
-	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 
 	var basePrompt, systemText string
 	if isReasoning {
@@ -336,28 +352,17 @@ func (op *AIScoreOp) Run(ctx context.Context) error {
 		if isReasoning {
 			maxTokens = 256
 		}
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
-			MaxTokens: maxTokens,
-			System: []anthropic.TextBlockParam{
-				{Text: systemText},
-			},
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+		res, err := op.caller.call(ctx, aiCallRequest{
+			SystemText: systemText,
+			Prompt:     prompt,
+			MaxTokens:  maxTokens,
 		})
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
-		slog.InfoContext(ctx, "AIScoreOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
+		slog.InfoContext(ctx, "AIScoreOp.tokens", "run_id", dagor.RunID(ctx), "model", op.model, "input_tokens", res.InputTokens, "output_tokens", res.OutputTokens)
 
-		var raw string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				raw += block.Text
-			}
-		}
-		raw = strings.TrimSpace(raw)
+		raw := strings.TrimSpace(res.Text)
 
 		if isReasoning {
 			var parsed struct {
@@ -406,6 +411,8 @@ func (op *AIScoreOp) Run(ctx context.Context) error {
 const AIBoolOpDescription = `AIBoolOp: AI-powered yes/no predicate.
   Params:   predicate string — the question to answer about the input (e.g. "does this text contain PII?").
             max_retries string — parse/validation retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
   Outputs:  Result bool, Reasoning string.`
 
@@ -417,6 +424,9 @@ type AIBoolOp struct {
 
 	predicate  string
 	maxRetries int
+	provider   string
+	model      string
+	caller     aiCaller
 }
 
 func (op *AIBoolOp) Setup(params *config.Params) error {
@@ -430,6 +440,13 @@ func (op *AIBoolOp) Setup(params *config.Params) error {
 			op.maxRetries = n
 		}
 	}
+	op.provider = params.GetString("provider", "claude")
+	op.model = params.GetString("model", "claude-sonnet-4-6")
+	caller, err := newAICaller(op.provider, op.model)
+	if err != nil {
+		return fmt.Errorf("AIBoolOp: %w", err)
+	}
+	op.caller = caller
 	return nil
 }
 
@@ -464,10 +481,9 @@ func (op *AIBoolOp) ResetFields() {
 }
 
 func (op *AIBoolOp) Run(ctx context.Context) error {
-	slog.DebugContext(ctx, "AIBoolOp.run", "run_id", dagor.RunID(ctx), "predicate", op.predicate)
+	slog.DebugContext(ctx, "AIBoolOp.run", "run_id", dagor.RunID(ctx), "model", op.model, "predicate", op.predicate)
 
 	isReasoning := logFromCtx(ctx) != nil
-	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 
 	var basePrompt, systemText string
 	if isReasoning {
@@ -494,28 +510,17 @@ func (op *AIBoolOp) Run(ctx context.Context) error {
 		if isReasoning {
 			maxTokens = 256
 		}
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
-			MaxTokens: maxTokens,
-			System: []anthropic.TextBlockParam{
-				{Text: systemText},
-			},
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+		res, err := op.caller.call(ctx, aiCallRequest{
+			SystemText: systemText,
+			Prompt:     prompt,
+			MaxTokens:  maxTokens,
 		})
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
-		slog.InfoContext(ctx, "AIBoolOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
+		slog.InfoContext(ctx, "AIBoolOp.tokens", "run_id", dagor.RunID(ctx), "model", op.model, "input_tokens", res.InputTokens, "output_tokens", res.OutputTokens)
 
-		var raw string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				raw += block.Text
-			}
-		}
-		raw = strings.TrimSpace(raw)
+		raw := strings.TrimSpace(res.Text)
 
 		if isReasoning {
 			var parsed struct {
@@ -554,6 +559,8 @@ func (op *AIBoolOp) Run(ctx context.Context) error {
 
 const AIBestMatchOpDescription = `AIBestMatchOp: AI-powered semantic selection — returns the index of the best-matching candidate.
   Params:   max_retries string — parse/validation retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Query *string, Candidates *[]string.
   Outputs:  Result int (0-based index), Reasoning string.`
 
@@ -565,6 +572,9 @@ type AIBestMatchOp struct {
 	Reasoning  string
 
 	maxRetries int
+	provider   string
+	model      string
+	caller     aiCaller
 }
 
 func (op *AIBestMatchOp) Setup(params *config.Params) error {
@@ -574,6 +584,13 @@ func (op *AIBestMatchOp) Setup(params *config.Params) error {
 			op.maxRetries = n
 		}
 	}
+	op.provider = params.GetString("provider", "claude")
+	op.model = params.GetString("model", "claude-sonnet-4-6")
+	caller, err := newAICaller(op.provider, op.model)
+	if err != nil {
+		return fmt.Errorf("AIBestMatchOp: %w", err)
+	}
+	op.caller = caller
 	return nil
 }
 
@@ -621,7 +638,6 @@ func (op *AIBestMatchOp) Run(ctx context.Context) error {
 	}
 
 	isReasoning := logFromCtx(ctx) != nil
-	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 
 	var sb strings.Builder
 	for i, c := range *op.Candidates {
@@ -654,28 +670,17 @@ func (op *AIBestMatchOp) Run(ctx context.Context) error {
 		if isReasoning {
 			maxTokens = 256
 		}
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
-			MaxTokens: maxTokens,
-			System: []anthropic.TextBlockParam{
-				{Text: systemText},
-			},
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+		res, err := op.caller.call(ctx, aiCallRequest{
+			SystemText: systemText,
+			Prompt:     prompt,
+			MaxTokens:  maxTokens,
 		})
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
-		slog.InfoContext(ctx, "AIBestMatchOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
+		slog.InfoContext(ctx, "AIBestMatchOp.tokens", "run_id", dagor.RunID(ctx), "model", op.model, "input_tokens", res.InputTokens, "output_tokens", res.OutputTokens)
 
-		var raw string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				raw += block.Text
-			}
-		}
-		raw = strings.TrimSpace(raw)
+		raw := strings.TrimSpace(res.Text)
 
 		var idx int
 		if isReasoning {
@@ -724,6 +729,8 @@ func (op *AIBestMatchOp) Run(ctx context.Context) error {
 
 const AIRerankOpDescription = `AIRerankOp: AI-powered reranking — returns a permutation of candidate indices, best first.
   Params:   max_retries string — parse/validation retries (default "3").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Query *string, Candidates *[]string.
   Outputs:  Result []int (permutation as CSV), Reasoning string.`
 
@@ -735,6 +742,9 @@ type AIRerankOp struct {
 	Reasoning  string
 
 	maxRetries int
+	provider   string
+	model      string
+	caller     aiCaller
 }
 
 func (op *AIRerankOp) Setup(params *config.Params) error {
@@ -744,6 +754,13 @@ func (op *AIRerankOp) Setup(params *config.Params) error {
 			op.maxRetries = n
 		}
 	}
+	op.provider = params.GetString("provider", "claude")
+	op.model = params.GetString("model", "claude-sonnet-4-6")
+	caller, err := newAICaller(op.provider, op.model)
+	if err != nil {
+		return fmt.Errorf("AIRerankOp: %w", err)
+	}
+	op.caller = caller
 	return nil
 }
 
@@ -791,7 +808,6 @@ func (op *AIRerankOp) Run(ctx context.Context) error {
 	}
 
 	isReasoning := logFromCtx(ctx) != nil
-	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 
 	var sb strings.Builder
 	for i, c := range *op.Candidates {
@@ -858,28 +874,17 @@ func (op *AIRerankOp) Run(ctx context.Context) error {
 		if isReasoning {
 			maxTokens = 512
 		}
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
-			MaxTokens: maxTokens,
-			System: []anthropic.TextBlockParam{
-				{Text: systemText},
-			},
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+		res, err := op.caller.call(ctx, aiCallRequest{
+			SystemText: systemText,
+			Prompt:     prompt,
+			MaxTokens:  maxTokens,
 		})
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
-		slog.InfoContext(ctx, "AIRerankOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
+		slog.InfoContext(ctx, "AIRerankOp.tokens", "run_id", dagor.RunID(ctx), "model", op.model, "input_tokens", res.InputTokens, "output_tokens", res.OutputTokens)
 
-		var raw string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				raw += block.Text
-			}
-		}
-		raw = strings.TrimSpace(raw)
+		raw := strings.TrimSpace(res.Text)
 
 		var indicesCSV, reasoning string
 		if isReasoning {

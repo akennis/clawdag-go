@@ -33,16 +33,20 @@ Read the following references before writing any code:
    go <version>
 
    require (
-       github.com/akennis/clawdag-go v0.1.0
+       github.com/akennis/clawdag-go v0.0.0-00010101000000-000000000000
        github.com/wwz16/dagor v0.0.0
    )
 
-   replace github.com/wwz16/dagor => github.com/akennis/dagor v0.0.0
+   replace (
+       github.com/akennis/clawdag-go => github.com/akennis/clawdag-go v0.0.0-00010101000000-000000000000
+       github.com/wwz16/dagor => github.com/akennis/dagor v0.0.0
+   )
    ```
-5. Run `go mod tidy` in `<output_dir>` — this resolves all remaining dependencies (mcp-go, ants, etc.) and writes `go.sum`.
-6. Run `go build ./...` in `<output_dir>` to compile.
-7. If the build fails, read the error output, fix `main.go`, and re-run step 6.
-8. Repeat until the build exits 0.
+5. Run `go get github.com/akennis/clawdag-go@init` in `<output_dir>` — this resolves the `init` branch to its current commit pseudo-version and updates `go.mod` automatically. Remove the `replace` directive for `clawdag-go` that was written in step 4 (it is no longer needed after this step).
+6. Run `go mod tidy` in `<output_dir>` — this resolves all remaining dependencies (ants, etc.) and writes `go.sum`.
+7. Run `go build ./...` in `<output_dir>` to compile.
+8. If the build fails, read the error output, fix `main.go`, and re-run step 7.
+9. Repeat until the build exits 0.
 
 # Implementation rules
 
@@ -88,13 +92,104 @@ Predicates receive WIRE NAMES as keys, never op field names or output field name
 - **SelectStringOp**: use when BOTH inputs always exist and the choice is a runtime bool wire.
 Never use CoalesceOp when neither branch is conditional.
 
+## Value injection rule
+
+There are exactly two ways a value may enter the DAG. Every value falls into one of these cases — no exceptions.
+
+**True constants** — values that are compile-time literals, never differ between runs — use `RegisterConst`:
+
+```go
+// Before buildGraph: register a named factory that always emits this value
+clawdag.RegisterConst[int]("CountThreshold", 5)
+clawdag.RegisterConst[string]("DefaultMode", "fast")
+
+// In the graph builder — output field is always "Result"
+graph.NewBuilder("my_graph").
+    Vertex("threshold").Op("CountThreshold").Output("Result", "threshold_wire").
+    ...
+```
+
+`ConstOp` (the backing type) has no params and no inputs; the value is captured at registration time.
+Use the named import `clawdag "github.com/akennis/clawdag-go/library"` to call `clawdag.RegisterConst`.
+
+**Everything else** — CLI flags, user text, env values, runtime-computed values, or anything that could
+vary between runs — MUST be injected via `context.WithValue` using a dedicated unexported key type.
+The DAG reads these values through a `ContextValOp` vertex (registered via `builtin.ContextValFactory`).
+`eng.SetInput` is **prohibited**.
+
+```go
+// WRONG:
+eng.SetInput("query_wire", userText)
+
+// RIGHT — three steps:
+// 1. Declare key type and register factory (before buildGraph)
+type ctxKey string
+const queryKey ctxKey = "query"
+operator.RegisterOpFactory("QueryInputOp", builtin.ContextValFactory[string](queryKey))
+
+// 2. Wire it in the graph builder — output field is always "Result"
+graph.NewBuilder("my_graph").
+    Vertex("query_input").Op("QueryInputOp").Output("Result", "query_wire").
+    ...
+
+// 3. Inject value into context before eng.Run
+ctx = context.WithValue(ctx, queryKey, userText)
+```
+
 ## Env var resolution in main()
 ALL `os.Getenv` calls MUST use literal string names in `main()`.
 Never call `os.Getenv` inside an operator's `Setup` or `Run`.
 
-## MCP mode
-Always support `--mode mcp` via `server.ServeStdio`. The MCP server is long-lived; use
-`context.Background()` for the server, and per-call timeouts inside the tool handler.
+## CLI flag parsing
+Parse all user inputs from CLI flags in `main()` using the `flag` package. Validate required flags
+before building the graph. Generated programs are plain CLI tools — no server modes or HTTP handlers.
+
+```go
+input := flag.String("input", "", "input text to process")
+flag.Parse()
+if *input == "" { log.Fatal("--input is required") }
+// then: context.WithValue, buildGraph, eng.Run
+```
+
+## Known library gaps
+Write these as inline custom ops when needed:
+
+**String truncation** — no library op caps string length. Write a custom `StringTruncateOp` when
+passing large text (e.g. a fetched web page) to AI ops to stay within context limits.
+
+## Custom AI compute ops
+`AIComputeOp[In, Out]` cannot be used directly in the graph. Embed it in a named concrete struct:
+```go
+type ScoreOp struct { clawdag.AIComputeOp[string, float64] }
+func init() { operator.RegisterOp[ScoreOp]() }
+```
+Use `clawdag "github.com/akennis/clawdag-go/library"` as the named import when embedding
+`AIComputeOp`. When `Out` is a struct, implement `ExpectedFormat() string` and
+`ParseAIResponse(string) error` on `*Out` to replace the default format prompt and parser.
+
+## Required imports
+```go
+// Standard library
+"log/slog"    // structured logging
+"os"          // os.Stderr for slog handler
+"context"     // context.WithValue, context.WithTimeout
+"flag"        // CLI flag parsing
+
+// clawdag-go library
+_ "github.com/akennis/clawdag-go/library"     // library ops — always include (triggers init)
+                                              // use named import when calling RegisterConst or embedding AIComputeOp:
+                                              //   clawdag "github.com/akennis/clawdag-go/library"
+
+// dagor ecosystem (see references/dagor-api.md for per-package details)
+"github.com/panjf2000/ants/v2"               // goroutine pool
+"github.com/wwz16/dagor"                     // NewEngine, WithReporter, RunID
+"github.com/wwz16/dagor/config"              // config.MergeCoalesce
+"github.com/wwz16/dagor/graph"               // graph.NewBuilder
+"github.com/wwz16/dagor/operator"            // RegisterOp, RegisterOpFactory
+"github.com/wwz16/dagor/operator/builtin"    // Coalesce*Op + ContextValFactory
+"github.com/wwz16/dagor/predicate"           // predicate.Register (only when using conditions)
+"github.com/wwz16/dagor/reporter"            // reporter.New
+```
 
 # Prohibited patterns
 
@@ -116,4 +211,12 @@ from `eng.GetOutput("final_result")`.
 ```
 // WRONG: .Merge(1)                    // untyped int — compile error
 // RIGHT: .Merge(config.MergeCoalesce) // import "github.com/wwz16/dagor/config"
+```
+
+## eng.SetInput anti-pattern
+Do NOT call `eng.SetInput` to feed values into the graph. Use `ContextValOp` + `context.WithValue`
+as described in the **Context-Driven Input Rule** above.
+```
+// WRONG: eng.SetInput("wire", value)
+// RIGHT: context.WithValue(ctx, key, value)  +  ContextValFactory(keyString) vertex in the graph
 ```

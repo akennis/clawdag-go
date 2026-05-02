@@ -6,12 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
 )
@@ -65,6 +62,7 @@ type AIResponseParser interface {
 }
 
 // AIComputeOp is a generic AI-powered compute operator.
+// Vertex params: provider ("claude"|"gemini", default "claude"), model (default "claude-sonnet-4-6").
 // In is the input type, Out is the output type.
 // Do not register AIComputeOp directly — use a concrete variant like AIComputeMathOperandsToFloat64Op.
 type AIComputeOp[In, Out any] struct {
@@ -74,6 +72,9 @@ type AIComputeOp[In, Out any] struct {
 
 	operation  string
 	maxRetries int
+	provider   string
+	model      string
+	caller     aiCaller
 }
 
 func (op *AIComputeOp[In, Out]) Setup(params *config.Params) error {
@@ -84,6 +85,13 @@ func (op *AIComputeOp[In, Out]) Setup(params *config.Params) error {
 			op.maxRetries = n
 		}
 	}
+	op.provider = params.GetString("provider", "claude")
+	op.model = params.GetString("model", "claude-sonnet-4-6")
+	caller, err := newAICaller(op.provider, op.model)
+	if err != nil {
+		return fmt.Errorf("AIComputeOp: %w", err)
+	}
+	op.caller = caller
 	return nil
 }
 
@@ -124,11 +132,9 @@ func (op *AIComputeOp[In, Out]) ResetFields() {
 }
 
 func (op *AIComputeOp[In, Out]) Run(ctx context.Context) error {
-	slog.DebugContext(ctx, "AIComputeOp.run", "run_id", dagor.RunID(ctx), "operation", op.operation)
+	slog.DebugContext(ctx, "AIComputeOp.run", "run_id", dagor.RunID(ctx), "model", op.model, "operation", op.operation)
 
 	isReasoning := logFromCtx(ctx) != nil
-	apiKey := os.Getenv("CLAUDE_API_KEY")
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
 	// Build input description.
 	var inputDesc string
@@ -178,28 +184,17 @@ func (op *AIComputeOp[In, Out]) Run(ctx context.Context) error {
 			).Replace(aiComputeRetryTemplate)
 		}
 
-		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
-			MaxTokens: 16 * 1024,
-			System: []anthropic.TextBlockParam{
-				{Text: systemText},
-			},
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+		res, err := op.caller.call(ctx, aiCallRequest{
+			SystemText: systemText,
+			Prompt:     prompt,
+			MaxTokens:  16 * 1024,
 		})
 		if err != nil {
 			return fmt.Errorf("generate content: %w", err)
 		}
-		slog.InfoContext(ctx, "AIComputeOp.tokens", "run_id", dagor.RunID(ctx), "input_tokens", msg.Usage.InputTokens, "output_tokens", msg.Usage.OutputTokens)
+		slog.InfoContext(ctx, "AIComputeOp.tokens", "run_id", dagor.RunID(ctx), "model", op.model, "input_tokens", res.InputTokens, "output_tokens", res.OutputTokens)
 
-		var raw string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				raw += block.Text
-			}
-		}
-		raw = strings.TrimSpace(raw)
+		raw := strings.TrimSpace(res.Text)
 
 		var resultStr, reasoning string
 		if isReasoning {
