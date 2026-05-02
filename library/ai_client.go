@@ -3,10 +3,16 @@ package library
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"math/rand"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/wwz16/dagor/config"
 	"google.golang.org/genai"
 )
 
@@ -26,18 +32,97 @@ type aiCaller interface {
 	call(ctx context.Context, req aiCallRequest) (aiCallResult, error)
 }
 
-// newAICaller creates a caller for the given provider and model.
+// retryConfig controls exponential backoff for transient API errors.
+type retryConfig struct {
+	maxRetries     int   // max retry attempts (default 3)
+	initialDelayMs int64 // starting delay in ms (default 500)
+}
+
+// parseRetryConfig reads api_retries and api_retry_delay_ms from vertex params.
+func parseRetryConfig(params *config.Params) retryConfig {
+	cfg := retryConfig{maxRetries: 3, initialDelayMs: 500}
+	if s := params.GetString("api_retries", ""); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			cfg.maxRetries = n
+		}
+	}
+	if s := params.GetString("api_retry_delay_ms", ""); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			cfg.initialDelayMs = n
+		}
+	}
+	return cfg
+}
+
+// newAICaller creates a caller for the given provider and model, wrapped with exponential backoff.
 // provider must be "claude" or "gemini"; model is passed through opaquely to the SDK.
 // Returns an error for unknown providers so graphs fail fast at Setup.
-func newAICaller(provider, model string) (aiCaller, error) {
+func newAICaller(provider, model string, cfg retryConfig) (aiCaller, error) {
+	var inner aiCaller
 	switch provider {
 	case "claude":
-		return &anthropicCaller{model: model}, nil
+		inner = &anthropicCaller{model: model}
 	case "gemini":
-		return &geminiCaller{model: model}, nil
+		inner = &geminiCaller{model: model}
 	default:
 		return nil, fmt.Errorf("unsupported provider %q: must be \"claude\" or \"gemini\"", provider)
 	}
+	if cfg.maxRetries <= 0 {
+		return inner, nil
+	}
+	return &retryingCaller{inner: inner, cfg: cfg}, nil
+}
+
+// isTransientError reports whether an API error is worth retrying (e.g. 503, 429, overloaded).
+func isTransientError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	for _, pattern := range []string{
+		"503", "429",
+		"too many requests", "rate limit", "rate_limit",
+		"overloaded", "unavailable",
+		"high demand", "try again",
+		"service unavailable",
+	} {
+		if strings.Contains(msg, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryingCaller wraps an aiCaller with exponential backoff for transient errors.
+type retryingCaller struct {
+	inner aiCaller
+	cfg   retryConfig
+}
+
+func (c *retryingCaller) call(ctx context.Context, req aiCallRequest) (aiCallResult, error) {
+	delay := time.Duration(c.cfg.initialDelayMs) * time.Millisecond
+	var lastErr error
+	for attempt := 0; attempt <= c.cfg.maxRetries; attempt++ {
+		if attempt > 0 {
+			var jitter time.Duration
+			if r := int64(delay) / 4; r > 0 {
+				jitter = time.Duration(rand.Int63n(r))
+			}
+			select {
+			case <-ctx.Done():
+				return aiCallResult{}, ctx.Err()
+			case <-time.After(delay + jitter):
+			}
+			delay = min(delay*2, 30*time.Second)
+		}
+		result, err := c.inner.call(ctx, req)
+		if err == nil {
+			return result, nil
+		}
+		if !isTransientError(err) {
+			return aiCallResult{}, err
+		}
+		lastErr = err
+		slog.WarnContext(ctx, "ai.retry", "attempt", attempt+1, "of", c.cfg.maxRetries, "err", err)
+	}
+	return aiCallResult{}, fmt.Errorf("after %d retries: %w", c.cfg.maxRetries, lastErr)
 }
 
 // anthropicCaller calls the Anthropic Messages API.

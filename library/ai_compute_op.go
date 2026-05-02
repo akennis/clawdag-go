@@ -87,7 +87,7 @@ func (op *AIComputeOp[In, Out]) Setup(params *config.Params) error {
 	}
 	op.provider = params.GetString("provider", "claude")
 	op.model = params.GetString("model", "claude-sonnet-4-6")
-	caller, err := newAICaller(op.provider, op.model)
+	caller, err := newAICaller(op.provider, op.model, parseRetryConfig(params))
 	if err != nil {
 		return fmt.Errorf("AIComputeOp: %w", err)
 	}

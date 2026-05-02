@@ -16,6 +16,8 @@ import (
 const ModeSelectOpDescription = `ModeSelectOp: AI-powered classifier — maps arbitrary input text to exactly one of a fixed set of categories.
   Params:   categories string — comma-separated list of valid output values (e.g. "arithmetic expression,city name").
             max_retries string — parse/validation retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string — the text to classify.
@@ -57,7 +59,7 @@ func (op *ModeSelectOp) Setup(params *config.Params) error {
 	}
 	op.provider = params.GetString("provider", "claude")
 	op.model = params.GetString("model", "claude-sonnet-4-6")
-	caller, err := newAICaller(op.provider, op.model)
+	caller, err := newAICaller(op.provider, op.model, parseRetryConfig(params))
 	if err != nil {
 		return fmt.Errorf("ModeSelectOp: %w", err)
 	}
