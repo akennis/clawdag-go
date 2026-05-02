@@ -395,6 +395,26 @@ export CLAUDE_API_KEY=<your key>
 go run ./examples/...
 ```
 
+## Examples
+
+Each example is a standalone Go binary that builds and runs a dagor workflow. All live under `examples/` and are compiled from the root module.
+
+| Example | Description | Env vars required |
+|---|---|---|
+| [`01-ticket-triager`](examples/01-ticket-triager/) | Classifies a free-text support ticket into billing / bug / feature / other and routes it through a category-specific extraction lane to produce structured output. | `CLAUDE_API_KEY` |
+| [`02-recipe-analyzer`](examples/02-recipe-analyzer/) | Fetches recipe instructions from TheMealDB (or a local fixture), runs three parallel AI extractors (ingredients, steps, cook time), scores difficulty deterministically, and returns difficulty-specific cooking advice. Uses Gemini for all AI vertices. | `GEMINI_API_KEY` |
+| [`03-readme-quality`](examples/03-readme-quality/) | Fetches a GitHub README (or fixture), runs five AI quality probes in parallel, averages the scores, and routes through a quality-band lane to produce a structured report. | `CLAUDE_API_KEY` |
+| [`04-weather-advisor`](examples/04-weather-advisor/) | Fetches live weather data for a city (or fixture), classifies conditions via AI, and combines deterministic temperature-band logic with AI-generated outfit advice. | `CLAUDE_API_KEY` |
+| [`05-hn-topic-brief`](examples/05-hn-topic-brief/) | Queries the HN Algolia API for a topic, fans out per-story relevance and classification checks over a MapOver node, identifies the dominant category, and produces a styled topic brief. | `CLAUDE_API_KEY` |
+| [`06-faithful-summary`](examples/06-faithful-summary/) | Demonstrates cross-model verification: Claude summarizes a source document in 3–5 sentences, then Gemini independently checks whether every claim in the summary is grounded in the source text, returning a boolean faithfulness verdict. | `CLAUDE_API_KEY`, `GEMINI_API_KEY` |
+
+```bash
+# Example: run the summarization faithfulness checker
+export CLAUDE_API_KEY=<your Anthropic key>
+export GEMINI_API_KEY=<your Google AI key>
+go run ./examples/06-faithful-summary --file article.txt
+```
+
 ## Claude Code Skills
 
 The `skills/` directory contains two installable skill packages for users who want to design
