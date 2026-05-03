@@ -2,24 +2,48 @@ package library
 
 import "strings"
 
-// AllDescriptions returns a formatted string listing all 71 library op descriptions,
+// AllDescriptions returns a formatted string listing all library op descriptions,
 // organized by group. Used by LibraryScanOp and the genlibdesc tool.
 func AllDescriptions() string {
 	groups := []struct {
 		header string
 		descs  []string
 	}{
-		{"## Math", []string{
-			AddOpDescription,
-			SubOpDescription,
-			DivOpDescription,
-			MulOpDescription,
+		{"## Math — float", []string{
+			AddFloatOpDescription,
+			SubFloatOpDescription,
+			MulFloatOpDescription,
+			DivFloatOpDescription,
+			PowFloatOpDescription,
+			ModFloatOpDescription,
 			RoundOpDescription,
-			ClampOpDescription,
-			SumOpDescription,
-			MinOpDescription,
-			MaxOpDescription,
+			ClampFloatOpDescription,
+			SumFloatOpDescription,
+			MinFloatOpDescription,
+			MaxFloatOpDescription,
 			PackMathOperandsOpDescription,
+		}},
+		{"## Math — int", []string{
+			AddIntOpDescription,
+			SubIntOpDescription,
+			MulIntOpDescription,
+			DivIntOpDescription,
+			PowIntOpDescription,
+			ModIntOpDescription,
+			SumIntOpDescription,
+			ClampIntOpDescription,
+			MinIntOpDescription,
+			MaxIntOpDescription,
+		}},
+		{"## Math — cast", []string{
+			IntToFloat64OpDescription,
+			Float64ToIntOpDescription,
+		}},
+		{"## String — cast", []string{
+			Float64ToStringOpDescription,
+			IntToStringOpDescription,
+			BoolToStringOpDescription,
+			ToStringOpDescription,
 		}},
 		{"## String", []string{
 			StringLookupOpDescription,

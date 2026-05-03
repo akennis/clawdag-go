@@ -32,6 +32,53 @@ Canonical AI-appropriate examples:
 5. Any operation whose correct output is the same for a given input every time.
 6. Any branching or routing based on known categories — use predicates and conditions.
 
+# NUMERIC TYPE DISCIPLINE
+The library provides parallel `int` and `float64` variants for every standard math operation. Numbers
+must stay in their original type until a type conversion is genuinely required by a downstream op.
+
+**Type assignment rules:**
+- Counts, lengths, indices, item quantities → `int` (e.g. `SliceLenOp` output, `IfIntGtOp` inputs)
+- Measurements, scores, ratios, weights, averages → `float64`
+- Results of integer arithmetic stay `int`; results of float arithmetic stay `float64`
+
+**Available typed op families (use the variant that matches your wire type):**
+- Binary infix: `AddFloatOp`/`AddIntOp`, `SubFloatOp`/`SubIntOp`, `MulFloatOp`/`MulIntOp`,
+  `DivFloatOp`/`DivIntOp`, `PowFloatOp`/`PowIntOp`, `ModFloatOp`/`ModIntOp`
+- Aggregate: `SumFloatOp`/`SumIntOp`, `MinFloatOp`/`MinIntOp`, `MaxFloatOp`/`MaxIntOp`
+- Clamp: `ClampFloatOp`/`ClampIntOp`
+- Explicit cast (only when genuinely required): `IntToFloat64Op`, `Float64ToIntOp`
+
+**When to cast:** add `IntToFloat64Op` only when an `int` wire must feed an op that requires `float64`
+input — for example, multiplying a count by a float weight. Do not cast speculatively. If all operands
+are the same type, use the matching op directly.
+
+WRONG — premature cast when all operands are int:
+```
+step_count (int) → IntToFloat64Op → step_count_f → AddFloatOp ← ingredient_count_f ← IntToFloat64Op ← ingredient_count (int)
+```
+
+RIGHT — both counts are int; use AddIntOp directly:
+```
+step_count (int) → AddIntOp ← ingredient_count (int)
+```
+
+RIGHT — cast only where the downstream op genuinely needs float64:
+```
+ingredient_count (int) → IntToFloat64Op → ingredient_count_f → MulFloatOp ← step_weight (float64)
+```
+(Cast is required here because one operand is float64; the other must match.)
+
+# STRING CAST — formatting numeric and bool wires as strings
+When a computed wire must feed into a string pipeline (e.g. `StringConcatOp`) or a final output
+vertex, use the typed cast ops — never an AI op:
+
+- `Float64ToStringOp` — `*float64` → `string` using `%v`
+- `IntToStringOp` — `*int` → `string` using `%v`
+- `BoolToStringOp` — `*bool` → `string` (`"true"` / `"false"`)
+- `ToStringOp` — accepts **any** upstream pointer type via reflection; use this when a custom
+  struct wire must feed a string pipeline. Output is `fmt.Sprintf("%v", value)`. This op cannot
+  be wired from typed outputs in the normal way — use it only for custom struct wires.
+
 # BRANCHING WITH MULTIPLE OPS PER LANE
 When one classification step (a ModeSelectOp output, a comparison result, etc.) routes to MULTIPLE
 parallel ops in the same lane — e.g. a "billing" classification triggers an extract op, a parse op,

@@ -44,34 +44,6 @@ type (
 	cookWeightKey       struct{}
 )
 
-// ─── Custom ops ────────────────────────────────────────────────────────────
-
-// IntToFloatOp widens an int wire to float64 so it can flow into MulOp/AddOp.
-// Library doesn't ship a numeric-conversion op; keeping it inline avoids a
-// framework change for a one-line bridge.
-type IntToFloatOp struct {
-	Value  *int    `dag:"input"`
-	Result float64 `dag:"output"`
-}
-
-func (op *IntToFloatOp) Setup(_ *config.Params) error { return nil }
-func (op *IntToFloatOp) Reset() error                 { return nil }
-func (op *IntToFloatOp) Run(_ context.Context) error  { op.Result = float64(*op.Value); return nil }
-func (op *IntToFloatOp) InputFields() map[string]any  { return map[string]any{"Value": &op.Value} }
-func (op *IntToFloatOp) OutputFields() map[string]any { return map[string]any{"Result": &op.Result} }
-func (op *IntToFloatOp) SetInputField(field string, value any) error {
-	if field != "Value" {
-		return fmt.Errorf("IntToFloatOp: unknown field %q", field)
-	}
-	v, ok := value.(*int)
-	if !ok {
-		return fmt.Errorf("IntToFloatOp: Value: expected *int, got %T", value)
-	}
-	op.Value = v
-	return nil
-}
-func (op *IntToFloatOp) ResetFields() { op.Value = nil; op.Result = 0 }
-
 func init() {
 	mustReg := func(name string, f func() operator.IOperator) {
 		if err := operator.RegisterOpFactory(name, f); err != nil {
@@ -84,10 +56,6 @@ func init() {
 	mustReg("path_mealname",       builtin.ContextValFactory[string](pathMealnameKey{}))
 	mustReg("step_weight",         builtin.ContextValFactory[float64](stepWeightKey{}))
 	mustReg("cook_weight",         builtin.ContextValFactory[float64](cookWeightKey{}))
-
-	if err := operator.RegisterOp[IntToFloatOp](); err != nil {
-		log.Fatalf("register IntToFloatOp: %v", err)
-	}
 }
 
 // ─── Predicates ────────────────────────────────────────────────────────────
@@ -198,11 +166,11 @@ func buildGraph(mode sourceMode) (*graph.Graph, error) {
 		Input("Input", "steps").
 		Output("Result", "step_count_int").
 
-		Vertex("ingredient_count").Op("IntToFloatOp").
+		Vertex("ingredient_count").Op("IntToFloat64Op").
 		Input("Value", "ingredient_count_int").
 		Output("Result", "ingredient_count_f").
 
-		Vertex("step_count").Op("IntToFloatOp").
+		Vertex("step_count").Op("IntToFloat64Op").
 		Input("Value", "step_count_int").
 		Output("Result", "step_count_f").
 
@@ -212,22 +180,22 @@ func buildGraph(mode sourceMode) (*graph.Graph, error) {
 		Vertex("cook_weight").Op("cook_weight").
 		Output("Result", "cook_weight").
 
-		Vertex("step_term").Op("MulOp").
+		Vertex("step_term").Op("MulFloatOp").
 		Input("A", "step_count_f").
 		Input("B", "step_weight").
 		Output("Result", "step_term").
 
-		Vertex("cook_term").Op("MulOp").
+		Vertex("cook_term").Op("MulFloatOp").
 		Input("A", "cook_minutes").
 		Input("B", "cook_weight").
 		Output("Result", "cook_term").
 
-		Vertex("partial_score").Op("AddOp").
+		Vertex("partial_score").Op("AddFloatOp").
 		Input("A", "ingredient_count_f").
 		Input("B", "step_term").
 		Output("Result", "partial_score").
 
-		Vertex("difficulty_score").Op("AddOp").
+		Vertex("difficulty_score").Op("AddFloatOp").
 		Input("A", "partial_score").
 		Input("B", "cook_term").
 		Output("Result", "difficulty_score")

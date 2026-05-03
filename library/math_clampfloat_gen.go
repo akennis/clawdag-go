@@ -5,19 +5,19 @@ import (
 	"fmt"
 )
 
-func (op *ClampOp) InputFields() map[string]any {
+func (op *ClampFloatOp) InputFields() map[string]any {
 	return map[string]any {
 		"Value": &op.Value,"Min": &op.Min,"Max": &op.Max,
 	}
 }
 
-func (op *ClampOp) OutputFields() map[string]any {
+func (op *ClampFloatOp) OutputFields() map[string]any {
 	return map[string]any {
 		"Result": &op.Result,
 	}
 }
 
-func (op *ClampOp) SetInputField(field string, value any) error {
+func (op *ClampFloatOp) SetInputField(field string, value any) error {
 	switch field {
 	case "Value":
 		if val, ok := value.(*float64); ok {
@@ -44,7 +44,7 @@ func (op *ClampOp) SetInputField(field string, value any) error {
 	return nil
 }
 
-func (op *ClampOp) ResetFields() {
+func (op *ClampFloatOp) ResetFields() {
 	var zeroValue *float64
 	op.Value = zeroValue
 	var zeroMin *float64

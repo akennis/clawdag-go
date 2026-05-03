@@ -5,19 +5,19 @@ import (
 	"fmt"
 )
 
-func (op *AddOp) InputFields() map[string]any {
+func (op *SubFloatOp) InputFields() map[string]any {
 	return map[string]any {
 		"A": &op.A,"B": &op.B,
 	}
 }
 
-func (op *AddOp) OutputFields() map[string]any {
+func (op *SubFloatOp) OutputFields() map[string]any {
 	return map[string]any {
 		"Result": &op.Result,
 	}
 }
 
-func (op *AddOp) SetInputField(field string, value any) error {
+func (op *SubFloatOp) SetInputField(field string, value any) error {
 	switch field {
 	case "A":
 		if val, ok := value.(*float64); ok {
@@ -38,7 +38,7 @@ func (op *AddOp) SetInputField(field string, value any) error {
 	return nil
 }
 
-func (op *AddOp) ResetFields() {
+func (op *SubFloatOp) ResetFields() {
 	var zeroA *float64
 	op.A = zeroA
 	var zeroB *float64

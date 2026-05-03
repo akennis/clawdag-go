@@ -1,16 +1,43 @@
 # Available Library Ops
 
-## Math
-AddOp: deterministic addition. Inputs: A *float64, B *float64. Output: Result float64.
-SubOp: A minus B. Inputs: A *float64, B *float64. Output: Result float64.
-DivOp: A divided by B. Inputs: A *float64, B *float64. Output: Result float64. Error if B==0.
-MulOp: A multiplied by B. Inputs: A *float64, B *float64. Output: Result float64.
+## Math — float
+AddFloatOp: deterministic float64 addition. Inputs: A *float64, B *float64. Output: Result float64.
+SubFloatOp: A minus B (float64). Inputs: A *float64, B *float64. Output: Result float64.
+MulFloatOp: A multiplied by B (float64). Inputs: A *float64, B *float64. Output: Result float64.
+DivFloatOp: A divided by B (float64). Inputs: A *float64, B *float64. Output: Result float64. Error if B==0.
+PowFloatOp: A raised to the power B (float64). Inputs: A *float64, B *float64. Output: Result float64.
+ModFloatOp: floating-point remainder of A/B. Inputs: A *float64, B *float64. Output: Result float64. Error if B==0.
 RoundOp: rounds Value to nearest integer. Input: Value *float64. Output: Result float64.
-ClampOp: clamps Value to [Min, Max]. Inputs: Value *float64, Min *float64, Max *float64. Output: Result float64.
-SumOp: sums all values in a slice. Input: Values *[]float64. Output: Result float64.
-MinOp: returns the minimum value in a slice. Input: Values *[]float64. Output: Result float64. Error if empty.
-MaxOp: returns the maximum value in a slice. Input: Values *[]float64. Output: Result float64. Error if empty.
+ClampFloatOp: clamps Value to [Min, Max] (float64). Inputs: Value *float64, Min *float64, Max *float64. Output: Result float64.
+SumFloatOp: sums all values in a float64 slice. Input: Values *[]float64. Output: Result float64.
+MinFloatOp: returns the minimum value in a float64 slice. Input: Values *[]float64. Output: Result float64. Error if empty.
+MaxFloatOp: returns the maximum value in a float64 slice. Input: Values *[]float64. Output: Result float64. Error if empty.
 PackMathOperandsOp: packs two float64 inputs into a MathOperands struct. Inputs: A *float64, B *float64. Output: Result MathOperands.
+
+
+## Math — int
+AddIntOp: deterministic int addition. Inputs: A *int, B *int. Output: Result int.
+SubIntOp: A minus B (int). Inputs: A *int, B *int. Output: Result int.
+MulIntOp: A multiplied by B (int). Inputs: A *int, B *int. Output: Result int.
+DivIntOp: A divided by B (int, truncates toward zero). Inputs: A *int, B *int. Output: Result int. Error if B==0.
+PowIntOp: A raised to the power B (int). Inputs: A *int, B *int. Output: Result int. Error if B<0.
+ModIntOp: integer remainder of A/B. Inputs: A *int, B *int. Output: Result int. Error if B==0.
+SumIntOp: sums all values in an int slice. Input: Values *[]int. Output: Result int.
+ClampIntOp: clamps Value to [Min, Max] (int). Inputs: Value *int, Min *int, Max *int. Output: Result int.
+MinIntOp: returns the minimum value in an int slice. Input: Values *[]int. Output: Result int. Error if empty.
+MaxIntOp: returns the maximum value in an int slice. Input: Values *[]int. Output: Result int. Error if empty.
+
+
+## Math — cast
+IntToFloat64Op: widens an int wire to float64. Input: Value *int. Output: Result float64.
+Float64ToIntOp: truncates a float64 wire to int. Input: Value *float64. Output: Result int.
+
+
+## String — cast
+Float64ToStringOp: formats a float64 as string using %v. Input: Value *float64. Output: Result string.
+IntToStringOp: formats an int as string using %v. Input: Value *int. Output: Result string.
+BoolToStringOp: formats a bool as string ("true" or "false"). Input: Value *bool. Output: Result string.
+ToStringOp: formats any upstream pointer value as string using %v; accepts any pointer type via reflection (escape hatch for custom struct wires). Input: Value (any pointer). Output: Result string.
 
 
 ## String
@@ -92,6 +119,8 @@ SliceTopKOp: returns indices of the K highest scores in descending order. Param:
 ModeSelectOp: AI-powered classifier — maps arbitrary input text to exactly one of a fixed set of categories.
   Params:   categories string — comma-separated list of valid output values (e.g. "arithmetic expression,city name").
             max_retries string — parse/validation retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string — the text to classify.
@@ -109,6 +138,8 @@ AIComputeMathOperandsToFloat64Op: AI-powered fallback for operations not availab
 AIExtractStringSliceOp: AI-powered extraction of a list from text.
   Params:   operation string — plain-English description (e.g. "extract all ingredient names from this recipe").
             max_retries string — parse retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
@@ -116,6 +147,8 @@ AIExtractStringSliceOp: AI-powered extraction of a list from text.
 AIExtractMapOp: AI-powered extraction of key-value pairs from text.
   Params:   operation string — plain-English description (e.g. "extract name, email, and city from this contact info").
             max_retries string — parse retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
@@ -123,6 +156,8 @@ AIExtractMapOp: AI-powered extraction of key-value pairs from text.
 AIParseNumberOp: AI-powered number extraction — converts text to float64.
   Params:   operation string — plain-English description (default: leave empty to extract the number from the text).
             max_retries string — parse retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string (e.g. "two thousand", "$1.2k", "the price is 42").
@@ -130,6 +165,8 @@ AIParseNumberOp: AI-powered number extraction — converts text to float64.
 AISummarizeOp: AI-powered summarization of a list of strings into one result string.
   Params:   operation string — plain-English instruction (e.g. "summarize into one concise sentence").
             max_retries string — parse retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *[]string — items to summarize.
@@ -137,6 +174,8 @@ AISummarizeOp: AI-powered summarization of a list of strings into one result str
 AIClassifyMultiLabelOp: AI-powered multi-label classifier — maps input to zero or more categories.
   Params:   categories string — comma-separated list of valid labels (e.g. "billing,bug,feature,spam").
             max_retries string — parse/validation retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
@@ -144,6 +183,8 @@ AIClassifyMultiLabelOp: AI-powered multi-label classifier — maps input to zero
 AIScoreOp: AI-powered scoring — returns a float64 in [0,1] measuring a criterion.
   Params:   criterion string — what to measure (e.g. "relevance to the query", "toxicity").
             max_retries string — parse/validation retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
@@ -151,18 +192,24 @@ AIScoreOp: AI-powered scoring — returns a float64 in [0,1] measuring a criteri
 AIBoolOp: AI-powered yes/no predicate.
   Params:   predicate string — the question to answer about the input (e.g. "does this text contain PII?").
             max_retries string — parse/validation retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string.
   Outputs:  Result bool, Reasoning string.
 AIBestMatchOp: AI-powered semantic selection — returns the index of the best-matching candidate.
   Params:   max_retries string — parse/validation retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Query *string, Candidates *[]string.
   Outputs:  Result int (0-based index), Reasoning string.
 AIRerankOp: AI-powered reranking — returns a permutation of candidate indices, best first.
   Params:   max_retries string — parse/validation retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Query *string, Candidates *[]string.

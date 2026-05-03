@@ -822,6 +822,59 @@ func buildGraph(sourceVal int) (*graph.Graph, error) {
   func init() { operator.RegisterOp[IntConstOp]() }
   ```
 
+# NUMERIC TYPE DISCIPLINE
+The library ships parallel `int` and `float64` variants for every standard math operation. A number
+wire must keep its original type until the point where a type conversion is genuinely forced by a
+downstream op. Never insert a cast op speculatively or to "normalize" types.
+
+**Type assignment rules:**
+- Counts, lengths, indices, item quantities → `int` (`SliceLenOp`, `IfIntGtOp` inputs, etc.)
+- Measurements, scores, ratios, weights, averages → `float64`
+- Integer arithmetic stays `int`; float arithmetic stays `float64`
+
+**Typed op families — always pick the variant that matches your wire type:**
+- Binary infix: `AddFloatOp`/`AddIntOp`, `SubFloatOp`/`SubIntOp`, `MulFloatOp`/`MulIntOp`,
+  `DivFloatOp`/`DivIntOp`, `PowFloatOp`/`PowIntOp`, `ModFloatOp`/`ModIntOp`
+- Aggregate: `SumFloatOp`/`SumIntOp`, `MinFloatOp`/`MinIntOp`, `MaxFloatOp`/`MaxIntOp`
+- Clamp: `ClampFloatOp`/`ClampIntOp`
+- Explicit cast (only when genuinely required): `IntToFloat64Op`, `Float64ToIntOp`
+
+**When to cast:** use `IntToFloat64Op` only when an `int` wire feeds an op that requires a `float64`
+input — for example, `MulFloatOp` when one operand is a float weight. If all operands are the same
+type, use the matching op directly with no cast.
+
+WRONG — both operands are `int`; no cast needed:
+```go
+// ingredient_count and step_count are both int outputs of SliceLenOp
+Vertex("cast1").Op("IntToFloat64Op").Input("Value", "ingredient_count").Output("Result", "ingredient_count_f")
+Vertex("cast2").Op("IntToFloat64Op").Input("Value", "step_count").Output("Result", "step_count_f")
+Vertex("total").Op("AddFloatOp").Input("A", "ingredient_count_f").Input("B", "step_count_f")...
+```
+
+RIGHT — no cast; use AddIntOp directly:
+```go
+Vertex("total").Op("AddIntOp").Input("A", "ingredient_count").Input("B", "step_count")...
+```
+
+RIGHT — cast only where the downstream op genuinely requires float64:
+```go
+// step_weight is float64; ingredient_count is int → cast is required here
+Vertex("cast").Op("IntToFloat64Op").Input("Value", "ingredient_count").Output("Result", "ingredient_count_f")
+Vertex("term").Op("MulFloatOp").Input("A", "ingredient_count_f").Input("B", "step_weight")...
+```
+
+# STRING CAST — formatting numeric and bool wires as strings
+When a computed wire must feed into a string pipeline (e.g. `StringConcatOp`) or a final result
+string, use the typed cast ops — never an AI op:
+
+- `Float64ToStringOp` — `*float64` → `string` using `%v`
+- `IntToStringOp` — `*int` → `string` using `%v`
+- `BoolToStringOp` — `*bool` → `string` (`"true"` / `"false"`)
+- `ToStringOp` — accepts **any** upstream pointer type via reflection. Use only for custom struct
+  wires. Its `SetInputField` uses `reflect.ValueOf(value).Elem().Interface()` to dereference the
+  incoming pointer, so it accepts `*MyStruct` from any upstream op. No daggen — it ships with
+  hand-written `InputFields`/`OutputFields`/`SetInputField`/`ResetFields`.
+
 # GENERATING NEW DETERMINISTIC OPS ON THE FLY:
   Before using ANY AI op, ask: "can Go code — including a hardcoded dataset — compute this correctly
   every time for a given input?" If yes, write a new deterministic op. There is no complexity limit:

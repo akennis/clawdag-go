@@ -38,7 +38,7 @@ func init() {
 		Vertex("b_const").Op("b_const").
 		Output("Result", "b").
 
-		Vertex("add").Op("AddOp").
+		Vertex("add").Op("AddFloatOp").
 		Input("A", "a").
 		Input("B", "b").
 		Output("Result", "result").

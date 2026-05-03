@@ -234,7 +234,7 @@ func buildGraph(mode sourceMode) (*graph.Graph, error) {
 
 	// ── Stage 4: deterministic average score ──────────────────────────────────
 	b.
-		Vertex("sum_scores").Op("AddOp").
+		Vertex("sum_scores").Op("AddFloatOp").
 		Input("A", "doc_score").
 		Input("B", "clarity_score").
 		Output("Result", "sum_scores_val").
@@ -242,7 +242,7 @@ func buildGraph(mode sourceMode) (*graph.Graph, error) {
 		Vertex("const_2").Op("const_2").
 		Output("Result", "two_f").
 
-		Vertex("avg_score_op").Op("DivOp").
+		Vertex("avg_score_op").Op("DivFloatOp").
 		Input("A", "sum_scores_val").
 		Input("B", "two_f").
 		Output("Result", "avg_score")
