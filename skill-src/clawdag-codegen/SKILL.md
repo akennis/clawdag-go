@@ -16,7 +16,7 @@ You are generating Go source code for a clawdag-go DAG workflow from an approved
 The output must compile with `go build` and run correctly.
 
 Read the following references before writing any code:
-1. `references/library.md` — all 71 op descriptions with exact field names and types
+1. `references/library.md` — all 89 op descriptions with exact field names and types
 2. `references/dagor-api.md` — operator boilerplate, builder DSL, config.Params API, logging, coalesce/map rules
 3. `references/examples/README.md` — pick the most structurally similar example
 4. Read that example file in `references/examples/`

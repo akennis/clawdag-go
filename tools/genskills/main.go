@@ -28,6 +28,7 @@ var exampleDirs = []string{
 	"03-readme-quality",
 	"04-weather-advisor",
 	"05-hn-topic-brief",
+	"06-faithful-summary",
 }
 
 func main() {

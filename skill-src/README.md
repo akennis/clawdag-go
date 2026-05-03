@@ -70,7 +70,11 @@ Copy-Item -Recurse clawdag-codegen "$env:USERPROFILE\.claude\skills\"
 
 No other steps are required — `library.md` is pre-generated in the bundle.
 
-## Required environment variable
+## Required environment variables
 
-`CLAUDE_API_KEY` — needed at **runtime** by any compiled workflow that includes AI ops.
-Not needed during design or code generation.
+| Variable | When needed |
+|---|---|
+| `CLAUDE_API_KEY` | Any workflow that includes AI ops backed by Claude (the default provider) |
+| `GEMINI_API_KEY` | Any workflow that includes AI ops with `provider: "gemini"` |
+
+Neither variable is needed during design or code generation — only at runtime.

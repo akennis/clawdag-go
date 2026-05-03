@@ -19,6 +19,10 @@ const StringLookupOpDescription = `StringLookupOp: looks up Key in a hardcoded s
 const AIComputeStringToStringOpDescription = `AIComputeStringToStringOp: AI-powered string→string computation.
   Params:   operation string — plain-English description (e.g. "suggest a condiment that pairs with the given food").
             max_retries string — parse retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *string — the query string.
   Outputs:  Result string, Reasoning string.`
 

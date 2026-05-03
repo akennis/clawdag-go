@@ -9,6 +9,7 @@ Read the example whose structural pattern most closely matches the workflow you 
 | Parallel HTTP fetch + status-code fallback + multi-probe scoring (dual GET → select → AI probes) | `03-readme-quality.go` |
 | Data parsing + band routing + conditional warning probes (parse → threshold predicates → coalesce + SelectStringOp) | `04-weather-advisor.go` |
 | MapOver fan-out + aggregation + routing (slice → map node → per-item sub-graph → collect → summarize) | `05-hn-topic-brief.go` |
+| Cross-model verification (Claude generates, Gemini independently checks faithfulness) | `06-faithful-summary.go` |
 
 ## Quick-reference guidance
 
@@ -31,3 +32,8 @@ Read the example whose structural pattern most closely matches the workflow you 
 - **Runtime-length list of items, each needing the same pipeline**: use `05-hn-topic-brief`.
   MapOver fans out over the fetched items; a sub-graph of deterministic + AI ops runs per item;
   CollectInto assembles the slice; AISummarizeOp condenses the collected results.
+
+- **Two AI models in series for cross-model verification**: use `06-faithful-summary`.
+  Claude generates a summary via AIComputeStringToStringOp; a custom deterministic op formats
+  the source + summary into a verification prompt; AIBoolOp backed by Gemini checks faithfulness.
+  Use this pattern when the generating model should not also judge its own output.

@@ -258,6 +258,10 @@ const PackMathOperandsOpDescription = "PackMathOperandsOp: packs two float64 inp
 const AIComputeMathOperandsToFloat64OpDescription = `AIComputeMathOperandsToFloat64Op: AI-powered fallback for operations not available in the library.
   Params:   operation string — plain-English description of what to compute (e.g. "multiply A by B").
             max_retries string — number of parse retries (default "3").
+            api_retries string — transient-error retries with exponential backoff (default "3").
+            api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            provider string — AI provider: "claude" (default) or "gemini".
+            model string — model name passed through to the provider (default: "claude-sonnet-4-6").
   Inputs:   Input *MathOperands (connect PackMathOperandsOp's Result wire).
   Outputs:  Result float64, Reasoning string.`
 

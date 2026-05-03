@@ -16,7 +16,7 @@ AI calls are reserved for genuine natural-language parsing or subjective judgmen
 deterministic alternative exists.
 
 Read the following references before producing any output:
-1. `references/library.md` — all 71 op descriptions grouped by category
+1. `references/library.md` — all 89 op descriptions grouped by category
 2. `references/design-rules.md` — design constraints, anti-patterns, and required patterns
 3. `references/examples/README.md` — pick the most structurally similar example
 4. Read that example file in `references/examples/`
@@ -30,6 +30,7 @@ Read the following references before producing any output:
 | Parallel HTTP fetch + status-code fallback + multi-probe scoring | `03-readme-quality.go` |
 | Parsed data + threshold routing + conditional warning suffix | `04-weather-advisor.go` |
 | Runtime slice → MapOver fan-out → per-item sub-graph → aggregation | `05-hn-topic-brief.go` |
+| Two AI models in series — Claude generates, Gemini independently verifies | `06-faithful-summary.go` |
 
 # Steps
 
