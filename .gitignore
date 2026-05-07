@@ -2,12 +2,14 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 # Binaries for programs and plugins
-clawdag-go
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+
+# Compiled binaries — build into /bin via `go build -o bin/ ./...`
+/bin/
 
 # Test binary, built with `go test -c`
 *.test

@@ -1,125 +1,76 @@
 # clawdag-go
 
-A DAG workflow framework for Go where computation is maximally deterministic and AI is used only where no deterministic solution exists. Given a natural-language prompt, clawdag-go designs, generates, compiles, and packages a self-contained workflow binary — ready to run as a CLI tool or an MCP server.
+A DAG workflow framework for Go where computation is maximally deterministic and AI is used only where no deterministic solution exists. clawdag-go is a **library**: you import it, you write your own `main`, and you `go build` your workflow into a binary you control.
+
+Code generation is handled by **AI assistants over the bundled skills** (`clawdag-design`, `clawdag-codegen`) — see [Claude Code Skills](#claude-code-skills) below. There is no built-in driver binary in this repository.
 
 ## Quick Start
 
+Add the library and a DAG engine to your project, then write a `main.go` that builds and runs a graph.
+
 ```bash
-export CLAUDE_API_KEY=<your Anthropic API key>
-go run .
+go get github.com/akennis/clawdag-go/library@latest
+go get github.com/wwz16/dagor@latest
+go get github.com/panjf2000/ants/v2@latest
 ```
 
-You'll be prompted for a task description. The system then:
-1. Designs a DAG workflow (AI-assisted)
-2. Presents the design for your review (up to 3 refinement rounds)
-3. Generates, compiles, and packages the solution
-4. Outputs the binary path and an optional `.mcpb` package
+A minimal workflow looks like this:
 
-### Example session
+```go
+package main
 
-```
-Enter prompt: Write a program that tells me the current time in any city
-═══ DAG DESIGN (round 1/3) ═══
-...
-Press Enter to approve, or type feedback to refine: <Enter>
-Design approved.
---- Generated Binary ---
-~/.dag-ai/solution/solution_bin.exe
---- Generated MCPB ---
-~/.dag-ai/solution.mcpb
+import (
+    "context"
+    "fmt"
+
+    "github.com/panjf2000/ants/v2"
+    "github.com/wwz16/dagor"
+    "github.com/wwz16/dagor/graph"
+    "github.com/wwz16/dagor/operator"
+
+    _ "github.com/akennis/clawdag-go/library" // registers all library ops
+)
+
+func main() {
+    g, err := graph.NewBuilder("hello").
+        Vertex("greet").Op("StringConcatOp").
+        Params(map[string]string{"a": "Hello, ", "b": "world"}).
+        Output("Result", "out").
+        Build()
+    if err != nil { panic(err) }
+
+    pool, _ := ants.NewPool(4)
+    defer pool.Release()
+
+    eng, _ := dagor.NewEngine(g, pool)
+    if err := eng.Run(context.Background()); err != nil { panic(err) }
+
+    out, _ := eng.GetOutput("out")
+    fmt.Println(*(out.(*string)))
+    eng.Close(context.Background())
+    _ = operator.Registry // ensure the registry is referenced; library import does the work
+}
 ```
 
-The generated binary supports two modes:
-```bash
-./solution_bin --mode cli    # interactive CLI (default)
-./solution_bin --mode mcp    # MCP server for AI clients
-```
+For real workflows, see the [`examples/`](examples/) directory — six end-to-end programs that cover classification, scoring, parallel fan-out, MapOver, and cross-model verification.
 
 ## Philosophy
 
-Most AI-assisted workflows treat every step as a prompt. clawdag-go inverts this: the default is a deterministic, composable library of pure-function operators, and AI is a fallback that fills gaps the library cannot cover.
+Most AI-assisted workflows treat every step as a prompt. clawdag-go inverts this: the default is a deterministic, composable library of pure-function operators, and AI is invoked only when necessary.
 
 The result is a workflow that is:
 
 - **Auditable** — every deterministic step has a known, testable outcome
 - **Minimal in AI calls** — AI is invoked only when necessary, reducing cost and non-determinism
 - **Transparently hybrid** — when AI does run, it logs its inputs, output, and reasoning for inspection
-- **Self-correcting** — when AI-generated code fails to compile, a fallback op regenerates it with the error as context
-- **Packageable** — successful builds are bundled as `.mcpb` archives for distribution
 
 ## Architecture
 
 Workflows are DAGs built from operators (ops). Each op is a Go struct with `dag:"input"` and `dag:"output"` field tags. The `daggen` code-generation tool reads those tags and generates boilerplate interface methods (`InputFields`, `OutputFields`, `SetInputField`, `ResetFields`). The [dagor](https://github.com/wwz16/dagor) engine resolves dependencies, schedules ops in parallel, and threads wire values between them.
 
-### The Driver Pipeline
-
-The top-level program runs a **three-phase pipeline**:
-
-#### Phase 1: Design
-
-```
-PromptOp ──────────────┐
-                        ▼
-LibraryScanOp ────► DAGDesignOp → design
-```
-
-`DAGDesignOp` calls Claude to produce a natural-language design for the solution DAG given the user's prompt and the available library.
-
-#### Phase 2: Review loop (up to 3 rounds, interactive)
-
-The user reviews the design. If feedback is given, a refine DAG runs:
-
-```
-StringConstOp (prompt) ──────────────────┐
-StringConstOp (library) ─────────────────┤
-StringConstOp (prev design) ─────────────┼─► DAGDesignRefineOp → design
-StringConstOp (feedback) ────────────────┘
-```
-
-This repeats until the user approves or 3 rounds are exhausted.
-
-#### Phase 3: Codegen + Package
-
-```
-StringConstOp (prompt) ──────┐
-StringConstOp (library) ─────┤
-StringConstOp (design) ───────┴──► GenerateOp → go_files
-                                        │
-                          ┌─────────────┼─────────────┐
-                          ▼             ▼             ▼
-                   ValidateDAGOp   WriteFilesOp   EnvScanOp
-                          │             │             │
-                          └──────┐      ▼             │
-                                 └► CompileOp         │
-                                        │             │
-                          ┌─────────────┴─────┐       │
-                          ▼                   ▼       │
-                     FallbackOp ──────► MCPBManifestAIOp
-                     (no-op if OK;            │       │
-                      regen on fail)          ▼       │
-                                     MCPBManifestPromptOp ◄─┘
-                                              │
-                                              ▼
-                                        PackageMCPBOp → .mcpb
-```
-
-**Key ops in Phase 3:**
-
-| Op | Role |
-|----|------|
-| `GenerateOp` | Calls Claude (claude-sonnet-4-6) to produce a `main.go` solution |
-| `ValidateDAGOp` | Validates the DAG structure of generated code |
-| `WriteFilesOp` | Writes files to `~/.dag-ai/solution/` and runs `go mod tidy` |
-| `CompileOp` | Compiles the solution binary (`on_error: continue`) |
-| `FallbackOp` | If compile/validation failed, regenerates + recompiles |
-| `EnvScanOp` | Scans generated code for `os.Getenv` calls |
-| `MCPBManifestAIOp` | AI-generates name/display_name/description for the package |
-| `MCPBManifestPromptOp` | Prompts user to confirm/edit manifest fields |
-| `PackageMCPBOp` | Bundles binary + manifest into a `.mcpb` ZIP archive |
-
 ### The Library
 
-`library/` contains registered ops that generated solutions can use:
+`library/` contains registered ops that workflows can use:
 
 | Op | Kind | Description |
 |----|------|-------------|
@@ -246,33 +197,6 @@ Vertex("classify").Op("ModeSelectOp").
     Output("Result", "input_mode").
 ```
 
-### Generated Solution Structure
-
-Generated solutions are dual-mode executables with this architecture:
-
-```go
-// UserInput — all workflow parameters in one struct
-// readCLIInput() — populates UserInput from stdin
-// buildGraph(input) — constructs the DAG from UserInput
-// runWorkflow(ctx, pool, input) — shared DAG execution
-// runCLIProgram(ctx, pool) — CLI mode wrapper
-// runMCPServer(pool) — MCP server mode wrapper
-// main() — flag parsing, mode dispatch
-```
-
-The solution binary outputs structured JSON in CLI mode:
-```json
-{"result": "17", "ai_nodes": [{"op": "MultiplyOp", "inputs": {...}, "output": 17, "reasoning": "..."}]}
-```
-
-### MCPB Packaging
-
-When compilation succeeds, the driver packages the binary into a `.mcpb` archive (ZIP) containing:
-- `manifest.json` — MCP manifest with tool metadata, env var declarations, and platform compatibility
-- `server/solution_bin.exe` — the compiled binary
-
-The manifest includes `user_config` entries for any environment variables detected via `EnvScanOp`.
-
 ## Extending the Library
 
 ### Injecting values
@@ -319,7 +243,7 @@ Use **`ContextValOp`** for any value that varies per execution: user input, requ
    ```go
    operator.RegisterOp[MyOp]()
    ```
-3. Add a `const MyOpDescription` string and include it in `LibraryScanOp.Run` so generated solutions know it exists.
+3. Add a `const MyOpDescription` string and include it in `library.AllDescriptions()` so the codegen skill knows it exists.
 4. Run `go generate ./library/...` to regenerate boilerplate.
 
 ### Adding an AI op
@@ -381,20 +305,6 @@ MapOver("item").
     CollectInto("result", "upper_strings").
 ```
 
-## Running the Demo
-
-```bash
-export CLAUDE_API_KEY=<your key>
-go run .
-```
-
-The `examples/` directory demonstrates a self-contained arithmetic workflow: AI parses operator precedence, deterministic library ops (`AddOp`, `SubOp`, `DivOp`) handle what they can, and `AIComputeMathOperandsToFloat64Op` handles multiplication (intentionally absent from the library):
-
-```bash
-export CLAUDE_API_KEY=<your key>
-go run ./examples/...
-```
-
 ## Examples
 
 Each example is a standalone Go binary that builds and runs a dagor workflow. All live under `examples/` and are compiled from the root module.
@@ -417,37 +327,34 @@ go run ./examples/06-faithful-summary --file article.txt
 
 ## Claude Code Skills
 
-Two installable skill packages let you design and generate clawdag-go workflows interactively
-through an AI assistant rather than running the driver CLI directly.
+Two installable skill packages let you design and generate clawdag-go workflows interactively through Claude Code (or any AI assistant that supports the `SKILL.md / references/` convention). These skills are **the** way to bootstrap a new workflow — they replace what was previously a built-in driver binary.
 
 | Skill | Trigger | Purpose |
 |---|---|---|
 | `clawdag-design` | `/clawdag-design` | Design a maximally deterministic DAG workflow from a task description, with an interactive refinement loop |
-| `clawdag-codegen` | `/clawdag-codegen` | Generate, compile, and fix a Go workflow binary from an approved design |
+| `clawdag-codegen` | `/clawdag-codegen` | Generate a Go workflow `main.go` + `go.mod` from an approved design, run `go mod tidy`, and fix any build errors |
 
-Download the latest bundle from the [releases page](https://github.com/akennis/clawdag-go/releases)
-and follow the installation instructions in the bundle's `README.md`.
+Download the latest bundle from the [releases page](https://github.com/akennis/clawdag-go/releases) and follow the installation instructions in the bundle's `README.md`.
 
 ### Generating the skills directory
 
-`skills/` is a build artifact — it is gitignored and assembled from canonical sources by
-`tools/genskills/main.go`. Run from the repo root:
+`skills/` is a build artifact — it is gitignored and assembled from canonical sources by `tools/genskills/main.go`. Run from the repo root:
 
 ```bash
 go generate .
 ```
 
-This regenerates `skills/` alongside the driver op boilerplate. Sources that feed into `skills/`:
+Sources that feed into `skills/`:
 
 | Canonical source | Generated output |
 |---|---|
-| `skill-src/*/SKILL.md` | `skills/*/SKILL.md` |
-| `skill-src/*/references/examples/README.md` | `skills/*/references/examples/README.md` |
 | `skill-src/README.md` | `skills/README.md` |
-| `prompts/dag_design.md` | `skills/clawdag-design/references/design-rules.md` |
-| `prompts/dagor-api.md` | `skills/clawdag-codegen/references/dagor-api.md` |
-| `examples/0N-*/main.go` | `skills/*/references/examples/0N-*.go` (with `//go:build ignore` prepended) |
-| `library.AllDescriptions()` | `skills/*/references/library.md` |
+| `skill-src/<skill>/SKILL.md` | `skills/<skill>/SKILL.md` |
+| `skill-src/<skill>/references/examples/README.md` | `skills/<skill>/references/examples/README.md` |
+| `skill-src/clawdag-design/references/design-rules.md` | `skills/clawdag-design/references/design-rules.md` |
+| `skill-src/clawdag-codegen/references/dagor-api.md` | `skills/clawdag-codegen/references/dagor-api.md` |
+| `examples/0N-*/main.go` | `skills/<skill>/references/examples/0N-*.go` (with `//go:build ignore` prepended) |
+| `library.AllDescriptions()` | `skills/<skill>/references/library.md` |
 
 ### Building a release bundle
 
@@ -472,95 +379,71 @@ Upload the zip as a release asset alongside the tagged source code.
 
 When cutting a new library version (e.g. `v0.1.0 → v0.2.0`):
 
-1. **Update version references** — two files need the new version string:
+1. **Update version references** — three files need the new version string:
    - `skill-src/clawdag-design/SKILL.md` — `version:` and `library_version:` in frontmatter
    - `skill-src/clawdag-codegen/SKILL.md` — same frontmatter fields, plus the `require github.com/akennis/clawdag-go` line in the go.mod template in the Steps section
    - `skill-src/README.md` — the "This bundle targets …" line at the top
 
-2. **Update the dagor replace directive** if `github.com/akennis/dagor` has been tagged at a new
-   version — update the `replace github.com/wwz16/dagor =>` line in the go.mod template in
-   `skill-src/clawdag-codegen/SKILL.md` to match.
+2. **Update the dagor replace directive** if `github.com/akennis/dagor` has been tagged at a new version — update the `replace github.com/wwz16/dagor =>` line in the go.mod template in `skill-src/clawdag-codegen/SKILL.md` to match.
 
 3. **Regenerate and publish** — run `go generate .`, build the zip, upload as a release asset.
 
 ## Code Generation
 
-`go generate .` regenerates driver op boilerplate (`daggen`) and assembles `skills/`:
+`go generate ./...` regenerates library op boilerplate (`daggen`) and assembles `skills/`:
 
 ```bash
-go generate .             # driver ops + skills/
-go generate ./library/... # library ops only
+go generate .              # skills/ only
+go generate ./library/...  # library op boilerplate
+go generate ./...          # both
 ```
 
 Do not edit `*_gen.go` files or anything under `skills/` manually — both are generated.
-
-## Prompt Templates
-
-The `prompts/` directory contains embedded prompt templates used by driver ops:
-
-| File | Used By | Purpose |
-|------|---------|---------|
-| `dag_design.md` | `DAGDesignOp`; also → `skills/clawdag-design/references/design-rules.md` | Instructs AI to design a DAG workflow |
-| `dag_design_refine.md` | `DAGDesignRefineOp` | Refines design based on user feedback |
-| `codegen.md` | `GenerateOp`, `FallbackOp` | Full code generation instructions with DSL reference |
-| `compile_error_context.md` | `FallbackOp` | Error context for compile failure retries |
-| `dag_validation_error_context.md` | `FallbackOp` | Error context for DAG validation failures |
-| `mcpb_manifest_ai.md` | `MCPBManifestAIOp` | Generates package name/description metadata |
-| `dagor-api.md` | → `skills/clawdag-codegen/references/dagor-api.md` | Dagor engine API reference for the codegen skill |
 
 ## File Layout
 
 ```
 clawdag-go/
-├── main.go               — driver DAG phases + retry loop
-├── driver_ops.go         — 16 driver op structs
-├── gen.go                — //go:generate directives for driver ops
-├── driver_*_gen.go       — generated (do not edit)
-├── prompts/
-│   ├── codegen.md        — code generation prompt template
-│   ├── dag_design.md     — DAG design prompt
-│   ├── dag_design_refine.md — design refinement prompt
-│   ├── compile_error_context.md
-│   ├── dag_validation_error_context.md
-│   └── mcpb_manifest_ai.md
-├── library/
-│   ├── descriptions.go   — AllDescriptions() — joins all 71 op description constants
-│   ├── const_op.go       — ConstOp[T] + RegisterConst (static constant injection)
-│   ├── math_ops.go       — AddOp, SubOp, DivOp, PackMathOperandsOp, and more
-│   ├── string_ops.go     — StringLookupOp, StringToLowerOp, AIComputeStringToStringOp, and more
-│   ├── time_ops.go       — CityTimeOp
-│   ├── mode_select_op.go — ModeSelectOp
-│   ├── ai_compute_op.go  — generic AIComputeOp[In, Out] base
-│   ├── gen.go            — //go:generate directives for library ops
-│   └── *_gen.go          — generated (do not edit)
+├── gen.go                  — //go:generate directive that assembles skills/
+├── library/                — the framework itself (importable subpackage)
+│   ├── descriptions.go     — AllDescriptions() — joins all op description constants
+│   ├── const_op.go         — ConstOp[T] + RegisterConst (static constant injection)
+│   ├── math_ops.go         — AddOp, SubOp, DivOp, PackMathOperandsOp, …
+│   ├── string_ops.go       — StringLookupOp, StringToLowerOp, …
+│   ├── time_ops.go         — CityTimeOp
+│   ├── mode_select_op.go   — ModeSelectOp
+│   ├── ai_compute_op.go    — generic AIComputeOp[In, Out] base
+│   ├── gen.go              — //go:generate directives for library ops
+│   └── *_gen.go            — generated (do not edit)
 ├── tools/
-│   ├── genlibdesc/
-│   │   └── main.go       — standalone library.md generator (legacy; go generate . uses genskills)
-│   └── genskills/
-│       └── main.go       — assembles skills/ from skill-src/, prompts/, examples/, and library
-├── skill-src/            — canonical sources for skill-specific content
-│   ├── README.md         — end-user install instructions (→ skills/README.md)
+│   ├── genlibdesc/main.go  — standalone library.md generator
+│   └── genskills/main.go   — assembles skills/ from skill-src/, examples/, and library
+├── skill-src/              — canonical sources for the skill bundle
+│   ├── README.md           — end-user install instructions (→ skills/README.md)
 │   ├── clawdag-design/
-│   │   ├── SKILL.md      — skill definition (→ skills/clawdag-design/SKILL.md)
-│   │   └── references/examples/README.md
+│   │   ├── SKILL.md
+│   │   └── references/
+│   │       ├── design-rules.md
+│   │       └── examples/README.md
 │   └── clawdag-codegen/
-│       ├── SKILL.md      — skill definition (→ skills/clawdag-codegen/SKILL.md)
-│       └── references/examples/README.md
-├── skills/               — generated by go generate . (gitignored; do not edit)
-├── examples/
-│   └── ...               — standalone workflow examples (01–06)
-└── CLAUDE.md             — instructions for AI assistants
+│       ├── SKILL.md
+│       └── references/
+│           ├── dagor-api.md
+│           └── examples/README.md
+├── skills/                 — generated by go generate . (gitignored; do not edit)
+├── examples/               — six end-to-end workflow examples
+└── CLAUDE.md               — instructions for AI assistants in this repo
 ```
 
 ## Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
-| `CLAUDE_API_KEY` | Required for all Claude API calls (design, codegen, AI library ops, ModeSelectOp) |
+| `CLAUDE_API_KEY` | Required for AI library ops (the default provider) |
+| `GEMINI_API_KEY` | Required only for ops or examples that select `provider: "gemini"` |
 
 ## Dependencies
 
 - [dagor](https://github.com/wwz16/dagor) — DAG execution engine
 - [anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go) — Claude API client
-- [mcp-go](https://github.com/mark3labs/mcp-go) — MCP server library (used in generated solutions)
 - [ants/v2](https://github.com/panjf2000/ants) — goroutine worker pool

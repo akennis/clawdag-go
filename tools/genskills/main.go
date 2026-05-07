@@ -1,12 +1,13 @@
 //go:build ignore
 
 // genskills assembles the skills/ distribution directory from canonical sources:
-//   - skill-src/*/SKILL.md + references/examples/README.md  → verbatim copy
-//   - skill-src/README.md                                   → verbatim copy
-//   - prompts/dag_design.md                                 → design-rules.md
-//   - prompts/dagor-api.md                                  → dagor-api.md
-//   - examples/0N-*/main.go                                 → examples/0N-*.go (with //go:build ignore prepended)
-//   - library.AllDescriptions()                             → library.md
+//   - skill-src/README.md                                            → verbatim copy
+//   - skill-src/<skill>/SKILL.md                                     → verbatim copy
+//   - skill-src/<skill>/references/examples/README.md                → verbatim copy
+//   - skill-src/clawdag-design/references/design-rules.md            → verbatim copy
+//   - skill-src/clawdag-codegen/references/dagor-api.md              → verbatim copy
+//   - examples/0N-*/main.go                                          → examples/0N-*.go (with //go:build ignore prepended)
+//   - library.AllDescriptions()                                      → library.md (per skill)
 //
 // Run via: go generate .
 // Or directly: go run ./tools/genskills/main.go
@@ -47,8 +48,14 @@ func main() {
 		mustWrite(filepath.Join("skills", skill, "references", "library.md"), []byte(libContent))
 	}
 
-	mustCopy("prompts/dag_design.md", "skills/clawdag-design/references/design-rules.md")
-	mustCopy("prompts/dagor-api.md", "skills/clawdag-codegen/references/dagor-api.md")
+	mustCopy(
+		"skill-src/clawdag-design/references/design-rules.md",
+		"skills/clawdag-design/references/design-rules.md",
+	)
+	mustCopy(
+		"skill-src/clawdag-codegen/references/dagor-api.md",
+		"skills/clawdag-codegen/references/dagor-api.md",
+	)
 
 	for _, exDir := range exampleDirs {
 		src := filepath.Join("examples", exDir, "main.go")
