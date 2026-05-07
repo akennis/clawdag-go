@@ -130,6 +130,9 @@ func AllDescriptions() string {
 		{"## JSON", []string{
 			JSONExtractOpDescription,
 		}},
+		{"## MCP", []string{
+			MCPFilesystemReadFileOpDescription,
+		}},
 	}
 
 	var sb strings.Builder
