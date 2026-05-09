@@ -87,7 +87,7 @@ Workflows are DAGs built from operators (ops). Each op is a Go struct with `dag:
 | `MinOp` | deterministic | Minimum of a `[]float64` slice |
 | `MaxOp` | deterministic | Maximum of a `[]float64` slice |
 | `PackMathOperandsOp` | deterministic | Packs two `float64` inputs into a `MathOperands` struct |
-| `AIComputeMathOperandsToFloat64Op` | AI | Performs any binary float64 operation (e.g. multiply) via Claude |
+| `AIComputeMathOperandsToFloat64Op` | AI | Performs any binary float64 operation (e.g. multiply) via the AI provider |
 | **Strings** | | |
 | `StringConcatOp` | deterministic | Concatenates two strings |
 | `StringToLowerOp` | deterministic | Lowercases a string |
@@ -95,7 +95,7 @@ Workflows are DAGs built from operators (ops). Each op is a Go struct with `dag:
 | `StringLookupOp` | deterministic | Looks up a key in a params-configured map; returns `""` on miss |
 | `RegexMatchOp` | deterministic | Reports whether input matches a compiled regex |
 | `RegexExtractOp` | deterministic | Returns first match (or submatch group 1) of a regex |
-| `AIComputeStringToStringOp` | AI | Performs any string→string transformation via Claude |
+| `AIComputeStringToStringOp` | AI | Performs any string→string transformation via the AI provider |
 | **Booleans** | | |
 | `BoolNotOp` | deterministic | Logical NOT |
 | `BoolAndOp` | deterministic | Logical AND |
@@ -346,6 +346,7 @@ Each example is a standalone Go binary that builds and runs a dagor workflow. Al
 | [`ticket-triager`](examples/ticket-triager/) | Classifies a free-text support ticket into billing / bug / feature / other and routes it through a category-specific extraction lane to produce structured output. | `CLAUDE_API_KEY` |
 | [`recipe-analyzer`](examples/recipe-analyzer/) | Fetches recipe instructions from TheMealDB (or a local fixture), runs three parallel AI extractors (ingredients, steps, cook time), scores difficulty deterministically, and returns difficulty-specific cooking advice. Uses Gemini for all AI vertices. | `GEMINI_API_KEY` |
 | [`readme-quality`](examples/readme-quality/) | Fetches a GitHub README (or fixture), runs five AI quality probes in parallel, averages the scores, and routes through a quality-band lane to produce a structured report. | `CLAUDE_API_KEY` |
+| [`stock-analyzer`](examples/stock-analyzer/) | Fetches live stock data and news from Yahoo Finance, performs deterministic calculations, and generates an AI-driven investment recommendation. Uses Gemini for AI vertices. | `GEMINI_API_KEY` |
 | [`weather-advisor`](examples/weather-advisor/) | Fetches live weather data for a city (or fixture), classifies conditions via AI, and combines deterministic temperature-band logic with AI-generated outfit advice. | `CLAUDE_API_KEY` |
 | [`hn-topic-brief`](examples/hn-topic-brief/) | Queries the HN Algolia API for a topic, fans out per-story relevance and classification checks over a MapOver node, identifies the dominant category, and produces a styled topic brief. | `CLAUDE_API_KEY` |
 | [`faithful-summary`](examples/faithful-summary/) | Demonstrates cross-model verification: Claude summarizes a source document in 3–5 sentences, then Gemini independently checks whether every claim in the summary is grounded in the source text, returning a boolean faithfulness verdict. | `CLAUDE_API_KEY`, `GEMINI_API_KEY` |
