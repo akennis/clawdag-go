@@ -56,6 +56,7 @@ func (op *HTTPGetOp) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("HTTPGetOp: build request: %w", err)
 	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTPGetOp: %w", err)
