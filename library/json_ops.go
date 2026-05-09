@@ -34,7 +34,11 @@ func (op *JSONExtractOp) Reset() error { return nil }
 func (op *JSONExtractOp) Run(ctx context.Context) error {
 	var root any
 	if err := json.Unmarshal([]byte(*op.JSON), &root); err != nil {
-		return fmt.Errorf("JSONExtractOp: invalid JSON: %w", err)
+		snippet := *op.JSON
+		if len(snippet) > 50 {
+			snippet = snippet[:50] + "..."
+		}
+		return fmt.Errorf("JSONExtractOp: invalid JSON (starts with %q): %w", snippet, err)
 	}
 	parts := strings.Split(*op.Path, ".")
 	cur := root
