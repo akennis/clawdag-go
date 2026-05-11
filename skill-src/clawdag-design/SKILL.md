@@ -46,9 +46,17 @@ defensive re-parsing.
 validate its output. AI ops support in-conversation self-repair: have the `Out`
 type's `ParseAIResponse` return `*library.ErrRepairable` on a fixable miss, and
 the op will append a follow-up turn in the same LLM conversation rather than
-opening a fresh repair call. Note this in the design's **AI Ops Used** section
-when an AI op is self-validating (e.g. `score (AIScoreOp, self-repair on
-out-of-range)`); do not add a separate WithRepair vertex around it.
+opening a fresh repair call.
+
+When an AI op is self-validating, the design's **AI Ops Used** entry MUST spell
+out the validation rules — codegen translates each rule into one
+`*library.ErrRepairable` return in `ParseAIResponse`. Examples:
+
+- `score (AIScoreOp, self-repair: must be float in [0, 1])`
+- `category (AICategoryOp, self-repair: must be one of {bug, feature, question})`
+- `summary (AISummaryOp, self-repair: must be wrapped in <summary>…</summary>)`
+
+Do not add a separate `[AI:WithRepair]` vertex for any of these.
 
 # Steps
 
@@ -125,7 +133,10 @@ For each op not found in the library:
 
 ### AI Ops Used
 For each AI op in the design:
-- **vertex_name** (`OpName`): the `operation` param text
+- **vertex_name** (`OpName`): the `operation` param text — phrase it so it
+  unambiguously identifies the task. Pair it with the validation rules listed
+  above (for self-validating ops) so the codegen step can write an
+  `ExpectedFormat()` precise enough that parsing succeeds on the first turn.
 
 ### Design Rationale
 Key decisions: why certain operations are deterministic vs AI, any tradeoffs
