@@ -20,8 +20,11 @@ const AIExtractStringSliceOpDescription = `AIExtractStringSliceOp: AI-powered ex
             max_retries string — parse retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Input *string.
   Outputs:  Result []string (CSV), Reasoning string.`
 
@@ -35,8 +38,11 @@ const AIExtractMapOpDescription = `AIExtractMapOp: AI-powered extraction of key-
             max_retries string — parse retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Input *string.
   Outputs:  Result map[string]string (key=value CSV), Reasoning string.`
 
@@ -50,8 +56,11 @@ const AIParseNumberOpDescription = `AIParseNumberOp: AI-powered number extractio
             max_retries string — parse retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Input *string (e.g. "two thousand", "$1.2k", "the price is 42").
   Outputs:  Result float64, Reasoning string.`
 
@@ -65,8 +74,11 @@ const AISummarizeOpDescription = `AISummarizeOp: AI-powered summarization of a l
             max_retries string — parse retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Input *[]string — items to summarize.
   Outputs:  Result string, Reasoning string.`
 
@@ -82,8 +94,11 @@ const AIClassifyMultiLabelOpDescription = `AIClassifyMultiLabelOp: AI-powered mu
             max_retries string — parse/validation retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Input *string.
   Outputs:  Result []string — subset of categories (CSV), Reasoning string.`
 
@@ -126,7 +141,9 @@ func (op *AIClassifyMultiLabelOp) Setup(params *config.Params) error {
 	}
 	op.provider = params.GetString("provider", "claude")
 	op.model = params.GetString("model", "claude-sonnet-4-6")
-	caller, err := newAICaller(op.provider, op.model, parseRetryConfig(params))
+	credRef := params.GetString("credential_ref", "")
+	factoryID := params.GetString("client_factory_id", "")
+	caller, err := newAICaller(op.provider, op.model, credRef, factoryID, parseRetryConfig(params))
 	if err != nil {
 		return fmt.Errorf("AIClassifyMultiLabelOp: %w", err)
 	}
@@ -264,8 +281,11 @@ const AIScoreOpDescription = `AIScoreOp: AI-powered scoring — returns a float6
             max_retries string — parse/validation retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Input *string.
   Outputs:  Result float64 ∈ [0,1], Reasoning string.`
 
@@ -295,7 +315,9 @@ func (op *AIScoreOp) Setup(params *config.Params) error {
 	}
 	op.provider = params.GetString("provider", "claude")
 	op.model = params.GetString("model", "claude-sonnet-4-6")
-	caller, err := newAICaller(op.provider, op.model, parseRetryConfig(params))
+	credRef := params.GetString("credential_ref", "")
+	factoryID := params.GetString("client_factory_id", "")
+	caller, err := newAICaller(op.provider, op.model, credRef, factoryID, parseRetryConfig(params))
 	if err != nil {
 		return fmt.Errorf("AIScoreOp: %w", err)
 	}
@@ -428,8 +450,11 @@ const AIBoolOpDescription = `AIBoolOp: AI-powered yes/no predicate.
             max_retries string — parse/validation retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Input *string.
   Outputs:  Result bool, Reasoning string.`
 
@@ -459,7 +484,9 @@ func (op *AIBoolOp) Setup(params *config.Params) error {
 	}
 	op.provider = params.GetString("provider", "claude")
 	op.model = params.GetString("model", "claude-sonnet-4-6")
-	caller, err := newAICaller(op.provider, op.model, parseRetryConfig(params))
+	credRef := params.GetString("credential_ref", "")
+	factoryID := params.GetString("client_factory_id", "")
+	caller, err := newAICaller(op.provider, op.model, credRef, factoryID, parseRetryConfig(params))
 	if err != nil {
 		return fmt.Errorf("AIBoolOp: %w", err)
 	}
@@ -578,8 +605,11 @@ const AIBestMatchOpDescription = `AIBestMatchOp: AI-powered semantic selection �
   Params:   max_retries string — parse/validation retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Query *string, Candidates *[]string.
   Outputs:  Result int (0-based index), Reasoning string.`
 
@@ -605,7 +635,9 @@ func (op *AIBestMatchOp) Setup(params *config.Params) error {
 	}
 	op.provider = params.GetString("provider", "claude")
 	op.model = params.GetString("model", "claude-sonnet-4-6")
-	caller, err := newAICaller(op.provider, op.model, parseRetryConfig(params))
+	credRef := params.GetString("credential_ref", "")
+	factoryID := params.GetString("client_factory_id", "")
+	caller, err := newAICaller(op.provider, op.model, credRef, factoryID, parseRetryConfig(params))
 	if err != nil {
 		return fmt.Errorf("AIBestMatchOp: %w", err)
 	}
@@ -750,8 +782,11 @@ const AIRerankOpDescription = `AIRerankOp: AI-powered reranking — returns a pe
   Params:   max_retries string — parse/validation retries (default "3").
             api_retries string — transient-error retries with exponential backoff (default "3").
             api_retry_delay_ms string — initial backoff delay in milliseconds (default "500").
+            api_factory_timeout_ms string — deadline for AIClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
             provider string — AI provider: "claude" (default) or "gemini".
             model string — model name passed through to the provider (default: "claude-sonnet-4-6").
+            credential_ref string — opaque credential identifier passed to AIClientFactory (default ""; ignored by the bundled env-var factory).
+            client_factory_id string — selects a registered AIClientFactory by id (default "" → process default).
   Inputs:   Query *string, Candidates *[]string.
   Outputs:  Result []int (permutation as CSV), Reasoning string.`
 
@@ -777,7 +812,9 @@ func (op *AIRerankOp) Setup(params *config.Params) error {
 	}
 	op.provider = params.GetString("provider", "claude")
 	op.model = params.GetString("model", "claude-sonnet-4-6")
-	caller, err := newAICaller(op.provider, op.model, parseRetryConfig(params))
+	credRef := params.GetString("credential_ref", "")
+	factoryID := params.GetString("client_factory_id", "")
+	caller, err := newAICaller(op.provider, op.model, credRef, factoryID, parseRetryConfig(params))
 	if err != nil {
 		return fmt.Errorf("AIRerankOp: %w", err)
 	}
