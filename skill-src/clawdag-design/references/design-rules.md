@@ -215,9 +215,13 @@ op with `Query *string` input and `Documents []library.Document` + `Texts []stri
 Wire the `Texts` output (`[]string`, parallel to `Documents[i].Content` in best-first order) into the
 downstream AI op — it plugs directly into `AISummarizeOp` / `AIRerankOp` / `AIBestMatchOp.Candidates`,
 or into a small custom op that joins it with the user's question for a string→string answer step.
-Use the `Documents` output only when downstream logic needs the per-document ID or relevance score
-(e.g. showing citations, gating on a minimum score). RetrieveOp params: `k` (default `"5"`) and an
-optional `retriever_id` for multi-backend setups.
+Use the `Documents` output only when downstream logic needs the per-document ID, score, or the
+Retriever-specific `Metadata` map (citation URL, highlighted snippets, timestamps, ACL flags,
+per-field scores — whatever the hosted search platform returns beyond the body text). The framework
+passes `Metadata` through unchanged; downstream custom ops type-assert the keys they care about
+(`doc.Metadata["source_url"].(string)`). Document in your design which Metadata keys the Retriever
+populates so downstream consumers know what to expect. RetrieveOp params: `k` (default `"5"`) and
+an optional `retriever_id` for multi-backend setups.
 
 When the retrieval needs to be **scoped by values produced upstream in the DAG** — a tenant id from
 an auth step, a category from a classifier, a date range from a planner — use `RetrieveWithFiltersOp`

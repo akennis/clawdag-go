@@ -9,10 +9,20 @@ import (
 // Document is a single retrieved item. ID identifies it within the corpus
 // (filename, primary key, vector-store ID — Retriever implementations choose).
 // Score is populated by Retrieve and conventionally orders results best-first.
+//
+// Metadata carries Retriever-specific extras the downstream graph may want:
+// citation URL, highlighted snippets ([]string), timestamps, ACL flags,
+// per-field scores, raw payload from a hosted search service, anything else
+// that doesn't fit into Content. The framework never reads Metadata — it
+// passes through unchanged. Retriever implementations document which keys
+// they populate; downstream custom ops type-assert the values they care
+// about (e.g. `doc.Metadata["source_url"].(string)`). Leave nil when there
+// is nothing extra to carry.
 type Document struct {
-	ID      string
-	Content string
-	Score   float64
+	ID       string
+	Content  string
+	Score    float64
+	Metadata map[string]any
 }
 
 // Retriever finds the k documents most relevant to a query. Implementations

@@ -16,7 +16,7 @@ AI calls are reserved for genuine natural-language parsing or subjective judgmen
 deterministic alternative exists.
 
 Read the following references before producing any output:
-1. `references/library.md` — all 89 op descriptions grouped by category
+1. `references/library.md` — all 91 op descriptions grouped by category
 2. `references/design-rules.md` — design constraints, anti-patterns, and required patterns
 3. `references/examples/README.md` — pick the most structurally similar example
 4. Read that example file in `references/examples/`
@@ -32,6 +32,7 @@ Read the following references before producing any output:
 | Runtime slice → MapOver fan-out → per-item sub-graph → aggregation | `hn-topic-brief.go` |
 | Two AI models in series — Claude generates, Gemini independently verifies | `faithful-summary.go` |
 | Strict parse/validate op + AI-driven minimal-mutation retry on bad input (`WithRepair`) | `with-repair.go` |
+| Retrieval-augmented Q&A — pull context from a knowledge base, ground an AI answer, parse source citations | `rag-bm25.go` |
 
 # AI recovery wrapper (WithRepair) placement
 
@@ -57,6 +58,44 @@ out the validation rules — codegen translates each rule into one
 - `summary (AISummaryOp, self-repair: must be wrapped in <summary>…</summary>)`
 
 Do not add a separate `[AI:WithRepair]` vertex for any of these.
+
+# Retrieval (RAG) — optional external context fan-in
+
+When the workflow needs facts that are not in the user's input and cannot be
+hardcoded (knowledge base, past tickets, current documentation, vector store),
+fan in retrieved context via `RetrieveOp`. The op outputs `Documents
+[]library.Document` (full records: ID, Content, Score, Metadata) and `Texts
+[]string` (parallel slice of `Documents[i].Content` — the convenience wire
+that plugs directly into AI ops taking `*[]string`).
+
+Use `RetrieveWithFiltersOp` instead when filter values come from upstream
+graph ops (tenant id from auth, category from a classifier, date range from a
+planner). It adds one input wire (`Filters *map[string]string`) and installs
+the filters into ctx for the Retriever to consume. Use plain `RetrieveOp`
+when there is no per-request scoping — don't reach for the filtered variant
+just because it exists.
+
+Downstream wiring choice:
+- Wire `Texts` when the AI op only needs passage content.
+- Wire `Documents` when downstream logic needs IDs, scores, or
+  Retriever-specific `Metadata` (citation URL, highlighted snippets,
+  timestamps, ACL flags, sub-field scores). The framework passes
+  `Metadata` through unchanged; downstream custom ops type-assert the keys
+  they care about (`doc.Metadata["source_url"].(string)`).
+
+When the design depends on a specific `Metadata` key, list it in **Design
+Rationale** so codegen knows which keys the Retriever must populate.
+
+Params on both ops:
+- `k` — number of documents to return (default `"5"`).
+- `retriever_id` — optional; selects a named Retriever registered in
+  `main()` via `library.RegisterRetriever`. Omit for the process default
+  set via `library.SetDefaultRetriever`.
+
+The Retriever implementation lives in `main.go` at the codegen step, not in
+the DAG. The design just names the retrieval vertex and its wiring. See
+`references/examples/rag-bm25.go` for an end-to-end RAG workflow with
+source-file citation extraction.
 
 # AIClientFactory params (optional — enterprise credential routing)
 

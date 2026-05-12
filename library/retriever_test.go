@@ -282,6 +282,58 @@ func TestRetrieveOp_KForwardedToRetriever(t *testing.T) {
 	}
 }
 
+// ─── Document Metadata ────────────────────────────────────────────────────
+
+func TestRetrieveOp_MetadataRoundTripsThroughOp(t *testing.T) {
+	docs := []Document{
+		{
+			ID:      "a",
+			Content: "alpha body",
+			Score:   0.9,
+			Metadata: map[string]any{
+				"source_url": "https://example.com/a",
+				"highlights": []string{"alpha", "body"},
+				"updated_at": "2026-04-01T12:00:00Z",
+				"acl":        []string{"public"},
+			},
+		},
+		{
+			ID:       "b",
+			Content:  "beta body",
+			Score:    0.7,
+			Metadata: nil,
+		},
+	}
+	withRetrievers(t, &stubRetriever{docs: docs})
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"k": "2"})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "anything"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(op.Documents) != 2 {
+		t.Fatalf("len(Documents) = %d, want 2", len(op.Documents))
+	}
+	got := op.Documents[0].Metadata
+	if got["source_url"] != "https://example.com/a" {
+		t.Fatalf("Metadata[source_url] = %v, want example.com/a", got["source_url"])
+	}
+	hl, ok := got["highlights"].([]string)
+	if !ok || len(hl) != 2 || hl[0] != "alpha" {
+		t.Fatalf("Metadata[highlights] = %v, want []string{alpha, body}", got["highlights"])
+	}
+	if got["acl"] == nil {
+		t.Fatalf("Metadata[acl] not preserved")
+	}
+	if op.Documents[1].Metadata != nil {
+		t.Fatalf("Documents[1].Metadata = %v, want nil (Retriever returned nil)", op.Documents[1].Metadata)
+	}
+}
+
 // ─── Filter convention ─────────────────────────────────────────────────────
 
 func TestWithRetrievalFilters_RoundTrip(t *testing.T) {

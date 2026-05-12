@@ -15,7 +15,7 @@ const RetrieveOpDescription = `RetrieveOp: pulls the top-k documents most releva
   Params:   k string — number of documents to return (default "5"). Lower values keep prompts compact; higher values broaden recall.
             retriever_id string — selects a Retriever registered via library.RegisterRetriever (default "" → process default set via library.SetDefaultRetriever).
   Inputs:   Query *string — the natural-language search query.
-  Outputs:  Documents []library.Document — full records ({ID, Content, Score}) sorted best-first. Use when downstream ops need IDs or scores.
+  Outputs:  Documents []library.Document — full records ({ID, Content, Score, Metadata}) sorted best-first. Use when downstream ops need IDs, scores, or Retriever-specific metadata (citation URL, highlights, timestamps, ACL flags, per-field scores — anything the Retriever stuffed into Metadata).
             Texts []string — parallel slice of Documents[i].Content in the same order. Wire this into AI ops that take *[]string (AISummarizeOp, AIRerankOp, AIBestMatchOp candidates).
   Setup is fail-fast: if no Retriever is registered the graph errors before any vertex runs. Call SetDefaultRetriever (or RegisterRetriever) before engine.Run.`
 

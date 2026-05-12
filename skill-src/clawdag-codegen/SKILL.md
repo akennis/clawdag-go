@@ -16,7 +16,7 @@ You are generating Go source code for a clawdag-go DAG workflow from an approved
 The output must compile with `go build` and run correctly.
 
 Read the following references before writing any code:
-1. `references/library.md` — all 89 op descriptions with exact field names and types
+1. `references/library.md` — all 91 op descriptions with exact field names and types
 2. `references/dagor-api.md` — operator boilerplate, builder DSL, config.Params API, logging, coalesce/map rules
 3. `references/examples/README.md` — pick the most structurally similar example
 4. Read that example file in `references/examples/`
@@ -357,6 +357,68 @@ Rules:
 When the design does NOT mention enterprise credential routing, generate code
 exactly as before — no factory imports, no registration in `main()`, no
 `credential_ref` / `client_factory_id` on vertices.
+
+## Retrieval (RAG) — Retriever wiring
+
+When the design includes a `RetrieveOp` or `RetrieveWithFiltersOp` vertex,
+register a `library.Retriever` implementation in `main()` BEFORE `eng.Run`.
+The default Retriever is nil; the graph fails fast at `Setup` if none is
+registered:
+
+```go
+func main() {
+    docs := loadKB(...)  // however the Retriever sources its corpus
+    library.SetDefaultRetriever(NewMyRetriever(docs))
+    // ... pool, buildGraph, eng.Run
+}
+```
+
+The Retriever type lives in `main.go` (or a sibling file under
+`<output_dir>/`) and implements one method:
+
+```go
+func (r *MyRetriever) Retrieve(ctx context.Context, query string, k int) ([]library.Document, error)
+```
+
+Each returned `library.Document` has `{ID, Content, Score, Metadata}`.
+Populate `Metadata` (a `map[string]any`) with whatever the design's downstream
+ops require — source filename, citation URL, highlighted snippets, timestamps,
+ACL flags, per-field scores. The framework passes `Metadata` through
+unchanged; downstream custom ops type-assert the keys they care about.
+
+**Two retrieval ops:**
+
+- `RetrieveOp` — static; outputs `Documents []library.Document` and `Texts
+  []string` (parallel slice of `Documents[i].Content`). Wire `Texts` into
+  AI ops that consume `*[]string` (`AISummarizeOp`, `AIRerankOp.Candidates`,
+  `AIBestMatchOp.Candidates`); wire `Documents` when downstream needs IDs,
+  scores, or Metadata.
+
+- `RetrieveWithFiltersOp` — dynamic; same outputs plus a required
+  `Filters *map[string]string` input wire. Build the filter map upstream
+  (custom op, string ops) and wire it in. The op installs the map into
+  ctx via `library.WithRetrievalFilters`; Retriever implementations read it
+  via `library.RetrievalFiltersFromContext`. The map is stringly-typed by
+  convention — the Retriever parses values it understands and ignores the
+  rest (do not error on unknown keys).
+
+**Multi-backend.** When the design references multiple Retrievers, register
+each under a distinct id and select per-vertex via the `retriever_id` param:
+
+```go
+library.RegisterRetriever("kb-a", retrieverA)
+library.RegisterRetriever("kb-b", retrieverB)
+```
+
+Use the named import `clawdag "github.com/akennis/clawdag-go/library"` (or
+`library` alias) to call `SetDefaultRetriever`, `RegisterRetriever`,
+`WithRetrievalFilters`, or `RetrievalFiltersFromContext` from main or from a
+custom Retriever implementation.
+
+See `references/examples/rag-bm25.go` for the end-to-end pattern including a
+custom inline op that consumes `Documents` to label passages with their
+source filename and a citation parser that extracts the LLM's `Sources:`
+trailer back into `[]string`.
 
 ## AI recovery wrapper (WithRepair)
 When a deterministic op may fail on structurally-fixable bad input (malformed JSON,

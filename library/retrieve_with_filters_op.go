@@ -16,7 +16,7 @@ const RetrieveWithFiltersOpDescription = `RetrieveWithFiltersOp: like RetrieveOp
             retriever_id string — selects a Retriever registered via library.RegisterRetriever (default "" → process default).
   Inputs:   Query *string — the natural-language search query.
             Filters *map[string]string — request-scoped filters. Installed into ctx via library.WithRetrievalFilters; the Retriever reads them via library.RetrievalFiltersFromContext. Values are strings by convention — Retriever implementations parse numbers, split CSV lists, etc. Empty or nil map skips installation (equivalent to RetrieveOp).
-  Outputs:  Documents []library.Document — full records sorted best-first.
+  Outputs:  Documents []library.Document — full records ({ID, Content, Score, Metadata}) sorted best-first.
             Texts []string — parallel slice of Documents[i].Content.
   Use this op when filter values are dynamic; use plain RetrieveOp when no filters are needed. Retriever implementations that don't understand the filter keys must ignore them, not error.`
 
