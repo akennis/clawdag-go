@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
@@ -14,11 +15,14 @@ import (
 const RetrieveWithFiltersOpDescription = `RetrieveWithFiltersOp: like RetrieveOp but with a runtime Filters input, for retrieval that depends on values produced by upstream graph ops (tenant id from an auth step, category from a classifier, date range from a planner, etc.).
   Params:   k string — number of documents to return (default "5").
             retriever_id string — selects a Retriever registered via library.RegisterRetriever (default "" → process default).
+            credential_ref string — opaque credential identifier installed into ctx for the Retriever (default ""; consumed by library.ResolveEmbeddingClient inside vector-store-backed Retrievers; ignored by Retrievers that don't embed).
+            client_factory_id string — selects a registered EmbeddingClientFactory by id for the Retriever's embedding lookup (default "" → process default set via library.SetDefaultEmbeddingClientFactory).
+            api_factory_timeout_ms string — deadline for the EmbeddingClientFactory credential lookup in milliseconds (default "30000"; "0" disables).
   Inputs:   Query *string — the natural-language search query.
             Filters *map[string]string — request-scoped filters. Installed into ctx via library.WithRetrievalFilters; the Retriever reads them via library.RetrievalFiltersFromContext. Values are strings by convention — Retriever implementations parse numbers, split CSV lists, etc. Empty or nil map skips installation (equivalent to RetrieveOp).
   Outputs:  Documents []library.Document — full records ({ID, Content, Score, Metadata}) sorted best-first.
             Texts []string — parallel slice of Documents[i].Content.
-  Use this op when filter values are dynamic; use plain RetrieveOp when no filters are needed. Retriever implementations that don't understand the filter keys must ignore them, not error.`
+  Use this op when filter values are dynamic; use plain RetrieveOp when no filters are needed. Retriever implementations that don't understand the filter keys must ignore them, not error. Embedding credentials install into ctx alongside the filters; both values coexist.`
 
 // RetrieveWithFiltersOp is the dynamic-filter sibling of RetrieveOp. It
 // installs filters from the Filters input wire into ctx via
@@ -31,9 +35,12 @@ type RetrieveWithFiltersOp struct {
 	Documents []Document         `dag:"output"`
 	Texts     []string           `dag:"output"`
 
-	k           int
-	retrieverID string
-	retriever   Retriever
+	k              int
+	retrieverID    string
+	credRef        string
+	factoryID      string
+	factoryTimeout time.Duration
+	retriever      Retriever
 }
 
 func (op *RetrieveWithFiltersOp) Setup(params *config.Params) error {
@@ -49,6 +56,16 @@ func (op *RetrieveWithFiltersOp) Setup(params *config.Params) error {
 		op.k = n
 	}
 	op.retrieverID = params.GetString("retriever_id", "")
+	op.credRef = params.GetString("credential_ref", "")
+	op.factoryID = params.GetString("client_factory_id", "")
+	op.factoryTimeout = 30 * time.Second
+	if s := params.GetString("api_factory_timeout_ms", ""); s != "" {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return fmt.Errorf("RetrieveWithFiltersOp: param api_factory_timeout_ms = %q: %w", s, err)
+		}
+		op.factoryTimeout = time.Duration(n) * time.Millisecond
+	}
 	r, err := resolveRetriever(op.retrieverID)
 	if err != nil {
 		return fmt.Errorf("RetrieveWithFiltersOp: %w", err)
@@ -64,6 +81,11 @@ func (op *RetrieveWithFiltersOp) Run(ctx context.Context) error {
 	slog.DebugContext(ctx, "RetrieveWithFiltersOp.run", "run_id", dagor.RunID(ctx), "k", op.k, "retriever_id", op.retrieverID, "filter_count", len(filters))
 
 	ctx = WithRetrievalFilters(ctx, filters)
+	ctx = WithEmbeddingCredentials(ctx, EmbeddingCredentials{
+		Ref:            op.credRef,
+		FactoryID:      op.factoryID,
+		FactoryTimeout: op.factoryTimeout,
+	})
 
 	docs, err := op.retriever.Retrieve(ctx, *op.Query, op.k)
 	if err != nil {

@@ -1,0 +1,374 @@
+// Package main demonstrates retrieval-augmented generation (RAG) over a small
+// local knowledge base using Gemini embeddings + cosine similarity for
+// retrieval, with source-file citations.
+//
+// On startup it loads every .txt file under testdata/kb/, tags each
+// library.Document with Metadata["source"] = filename, and embeds the
+// corpus via library.ResolveEmbeddingClient against Gemini's
+// text-embedding-005 model. The framework's default
+// EnvEmbeddingClientFactory reads GEMINI_API_KEY for credentials — no env
+// var reads in this example's code. The resulting GeminiVectorRetriever
+// (embed_retriever.go) is registered as the process default Retriever.
+//
+// The graph is four vertices, identical in shape to rag-bm25:
+// RetrieveOp pulls the top-3 documents (cosine over Gemini vectors);
+// BuildRAGPromptOp formats them into a single prompt (each passage
+// labelled by its source filename) and instructs the LLM to end with a
+// "Sources: <filenames>" trailer; AIComputeStringToStringOp generates the
+// response; ParseCitationsOp splits it into the answer body and the cited
+// filenames. The driver filters cited filenames against the loaded KB
+// (dropping hallucinations) and prints answer + sources.
+//
+// The point of the example is the credential plumbing: a vector-store-backed
+// Retriever can consume the framework's EmbeddingClientFactory the same way
+// AI ops consume AIClientFactory, including per-vertex credential routing
+// via the credential_ref / client_factory_id / api_factory_timeout_ms
+// vertex params on RetrieveOp. Swap Gemini for any other embedder by
+// registering a custom EmbeddingClientFactory in main() and calling
+// library.ResolveEmbeddingClient(ctx, "<provider>", "<model>") inside the
+// Retriever.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/akennis/clawdag-go/library"
+
+	"github.com/panjf2000/ants/v2"
+	"github.com/wwz16/dagor"
+	"github.com/wwz16/dagor/config"
+	"github.com/wwz16/dagor/graph"
+	"github.com/wwz16/dagor/operator"
+	builtin "github.com/wwz16/dagor/operator/builtin"
+	"github.com/wwz16/dagor/reporter"
+)
+
+const embeddingModel = "gemini-embedding-001"
+
+// ─── Context keys ──────────────────────────────────────────────────────────
+
+type questionKey struct{}
+
+// ─── Custom ops ────────────────────────────────────────────────────────────
+
+// BuildRAGPromptOp formats retrieved documents into a single prompt for a
+// string→string AI op. Each passage is prefixed with its source filename
+// (read from Document.Metadata["source"]) so the LLM can cite them in a
+// "Sources:" trailer that ParseCitationsOp later extracts.
+type BuildRAGPromptOp struct {
+	Question  *string             `dag:"input"`
+	Documents *[]library.Document `dag:"input"`
+	Prompt    string              `dag:"output"`
+}
+
+func (op *BuildRAGPromptOp) Setup(_ *config.Params) error { return nil }
+func (op *BuildRAGPromptOp) Reset() error                 { return nil }
+func (op *BuildRAGPromptOp) Run(_ context.Context) error {
+	var sb strings.Builder
+	sb.WriteString("Answer the question using ONLY the provided context passages. ")
+	sb.WriteString("If the context does not contain the answer, reply exactly: \"I don't know based on the provided context.\"\n\n")
+	sb.WriteString("After your answer, on a new final line, list the source filenames you actually drew from in the form: \"Sources: file1.txt, file2.txt\". ")
+	sb.WriteString("Include only the files whose content materially supported your answer; omit any whose passages you did not use. ")
+	sb.WriteString("If your answer is \"I don't know based on the provided context.\", use \"Sources: none\".\n\n")
+	sb.WriteString("Context passages:\n")
+	if len(*op.Documents) == 0 {
+		sb.WriteString("(no passages retrieved)\n")
+	}
+	for _, d := range *op.Documents {
+		source := sourceFilename(d)
+		fmt.Fprintf(&sb, "[%s] %s\n", source, d.Content)
+	}
+	sb.WriteString("\nQuestion: ")
+	sb.WriteString(*op.Question)
+	op.Prompt = sb.String()
+	return nil
+}
+func (op *BuildRAGPromptOp) InputFields() map[string]any {
+	return map[string]any{"Question": &op.Question, "Documents": &op.Documents}
+}
+func (op *BuildRAGPromptOp) OutputFields() map[string]any {
+	return map[string]any{"Prompt": &op.Prompt}
+}
+func (op *BuildRAGPromptOp) SetInputField(field string, value any) error {
+	switch field {
+	case "Question":
+		v, ok := value.(*string)
+		if !ok {
+			return fmt.Errorf("BuildRAGPromptOp: Question: expected *string, got %T", value)
+		}
+		op.Question = v
+	case "Documents":
+		v, ok := value.(*[]library.Document)
+		if !ok {
+			return fmt.Errorf("BuildRAGPromptOp: Documents: expected *[]library.Document, got %T", value)
+		}
+		op.Documents = v
+	default:
+		return fmt.Errorf("BuildRAGPromptOp: unknown field %q", field)
+	}
+	return nil
+}
+func (op *BuildRAGPromptOp) ResetFields() {
+	op.Question = nil
+	op.Documents = nil
+	op.Prompt = ""
+}
+
+// sourceFilename returns the canonical filename label for a retrieved
+// document. Prefers Metadata["source"] (set by loadKB); falls back to
+// Document.ID + ".txt" so the prompt always carries a stable identifier.
+func sourceFilename(d library.Document) string {
+	if s, ok := d.Metadata["source"].(string); ok && s != "" {
+		return s
+	}
+	return d.ID + ".txt"
+}
+
+// ParseCitationsOp splits an LLM response of the form
+//
+//	<answer body>
+//	Sources: file1.txt, file2.txt
+//
+// into Body and Sources. If no "Sources:" trailer is found, Body is the raw
+// response and Sources is nil. "Sources: none" yields a nil slice. The op
+// does not validate that filenames exist in any corpus — that's the
+// caller's job after retrieval-aware filtering.
+type ParseCitationsOp struct {
+	Raw     *string  `dag:"input"`
+	Body    string   `dag:"output"`
+	Sources []string `dag:"output"`
+}
+
+func (op *ParseCitationsOp) Setup(_ *config.Params) error { return nil }
+func (op *ParseCitationsOp) Reset() error                 { return nil }
+func (op *ParseCitationsOp) Run(_ context.Context) error {
+	raw := strings.TrimSpace(*op.Raw)
+	lower := strings.ToLower(raw)
+	idx := strings.LastIndex(lower, "sources:")
+	if idx == -1 {
+		op.Body = raw
+		op.Sources = nil
+		return nil
+	}
+	op.Body = strings.TrimRight(raw[:idx], " \t\r\n")
+	csv := strings.TrimSpace(raw[idx+len("sources:"):])
+	if csv == "" || strings.EqualFold(csv, "none") {
+		op.Sources = nil
+		return nil
+	}
+	var sources []string
+	for _, s := range strings.Split(csv, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			sources = append(sources, s)
+		}
+	}
+	op.Sources = sources
+	return nil
+}
+func (op *ParseCitationsOp) InputFields() map[string]any {
+	return map[string]any{"Raw": &op.Raw}
+}
+func (op *ParseCitationsOp) OutputFields() map[string]any {
+	return map[string]any{"Body": &op.Body, "Sources": &op.Sources}
+}
+func (op *ParseCitationsOp) SetInputField(field string, value any) error {
+	if field != "Raw" {
+		return fmt.Errorf("ParseCitationsOp: unknown field %q", field)
+	}
+	v, ok := value.(*string)
+	if !ok {
+		return fmt.Errorf("ParseCitationsOp: Raw: expected *string, got %T", value)
+	}
+	op.Raw = v
+	return nil
+}
+func (op *ParseCitationsOp) ResetFields() {
+	op.Raw = nil
+	op.Body = ""
+	op.Sources = nil
+}
+
+func init() {
+	mustReg := func(name string, f func() operator.IOperator) {
+		if err := operator.RegisterOpFactory(name, f); err != nil {
+			log.Fatalf("register %s: %v", name, err)
+		}
+	}
+	mustReg("question_const", builtin.ContextValFactory[string](questionKey{}))
+
+	if err := operator.RegisterOp[BuildRAGPromptOp](); err != nil {
+		log.Fatalf("register BuildRAGPromptOp: %v", err)
+	}
+	if err := operator.RegisterOp[ParseCitationsOp](); err != nil {
+		log.Fatalf("register ParseCitationsOp: %v", err)
+	}
+}
+
+// ─── Graph ─────────────────────────────────────────────────────────────────
+
+func buildGraph() (*graph.Graph, error) {
+	return graph.NewBuilder("rag_gemini_embed").
+		Vertex("question_const").Op("question_const").
+		Output("Result", "question").
+		Vertex("retrieve").Op("RetrieveOp").
+		Params(map[string]string{"k": "3"}).
+		Input("Query", "question").
+		Output("Documents", "documents").
+		Output("Texts", "texts").
+		Vertex("format_prompt").Op("BuildRAGPromptOp").
+		Input("Question", "question").
+		Input("Documents", "documents").
+		Output("Prompt", "prompt").
+		Vertex("answer").Op("AIComputeStringToStringOp").
+		Params(map[string]string{
+			"operation": "answer the question grounded in the provided context, then cite the source filenames you used",
+			"provider":  "claude",
+			"model":     "claude-sonnet-4-6",
+		}).
+		Input("Input", "prompt").
+		Output("Result", "raw_answer").
+		Vertex("parse_citations").Op("ParseCitationsOp").
+		Input("Raw", "raw_answer").
+		Output("Body", "body").
+		Output("Sources", "sources").
+		Build()
+}
+
+// ─── Knowledge base ────────────────────────────────────────────────────────
+
+func loadKB(dir string) ([]library.Document, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+	var docs []library.Document
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+		docs = append(docs, library.Document{
+			ID:      strings.TrimSuffix(e.Name(), ".txt"),
+			Content: string(body),
+			Metadata: map[string]any{
+				"source": e.Name(),
+			},
+		})
+	}
+	if len(docs) == 0 {
+		return nil, fmt.Errorf("no .txt files in %s", dir)
+	}
+	return docs, nil
+}
+
+// ─── Driver ────────────────────────────────────────────────────────────────
+
+func main() {
+	question := flag.String("question", "how do I return an item?", "the question to answer using the knowledge base")
+	kbDir := flag.String("kb", "testdata/kb", "directory of .txt knowledge base files")
+	indexTimeout := flag.Duration("index-timeout", 30*time.Second, "deadline for embedding the KB at startup")
+	flag.Parse()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	if strings.TrimSpace(*question) == "" {
+		fmt.Fprintln(os.Stderr, "usage: rag-gemini-embed --question \"<your question>\" [--kb <dir>]")
+		os.Exit(2)
+	}
+
+	docs, err := loadKB(*kbDir)
+	if err != nil {
+		log.Fatalf("load knowledge base: %v", err)
+	}
+
+	indexCtx, indexCancel := context.WithTimeout(context.Background(), *indexTimeout)
+	defer indexCancel()
+	slog.Info("rag-gemini-embed.indexing", "doc_count", len(docs), "model", embeddingModel)
+	retriever, err := NewGeminiVectorRetriever(indexCtx, docs, embeddingModel)
+	if err != nil {
+		log.Fatalf("build retriever: %v", err)
+	}
+	library.SetDefaultRetriever(retriever)
+
+	g, err := buildGraph()
+	if err != nil {
+		log.Fatalf("build graph: %v", err)
+	}
+
+	pool, err := ants.NewPool(10)
+	if err != nil {
+		log.Fatalf("create pool: %v", err)
+	}
+	defer pool.Release()
+
+	eng, err := dagor.NewEngine(g, pool, dagor.WithReporter(reporter.New(slog.Default())))
+	if err != nil {
+		log.Fatalf("create engine: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	ctx = context.WithValue(ctx, questionKey{}, *question)
+
+	if err := eng.Run(ctx); err != nil {
+		log.Fatalf("run graph: %v", err)
+	}
+
+	knownSources := map[string]bool{}
+	for _, d := range docs {
+		if s, ok := d.Metadata["source"].(string); ok && s != "" {
+			knownSources[s] = true
+		}
+	}
+
+	if raw, ok := eng.GetOutput("documents"); ok {
+		if p, ok := raw.(*[]library.Document); ok && p != nil {
+			fmt.Fprintln(os.Stderr, "Retrieved passages:")
+			for _, d := range *p {
+				fmt.Fprintf(os.Stderr, "  [%s] cosine=%.3f\n", sourceFilename(d), d.Score)
+			}
+		}
+	}
+
+	var body string
+	if raw, ok := eng.GetOutput("body"); ok {
+		if p, ok := raw.(*string); ok && p != nil {
+			body = *p
+		}
+	}
+	if body == "" {
+		log.Fatalf("answer body not produced")
+	}
+
+	var sources []string
+	if raw, ok := eng.GetOutput("sources"); ok {
+		if p, ok := raw.(*[]string); ok && p != nil {
+			sources = *p
+		}
+	}
+
+	cited := make([]string, 0, len(sources))
+	for _, s := range sources {
+		if knownSources[s] {
+			cited = append(cited, s)
+		} else {
+			slog.Warn("dropping hallucinated source", "source", s)
+		}
+	}
+
+	fmt.Println(body)
+	if len(cited) > 0 {
+		fmt.Println()
+		fmt.Println("Sources: " + strings.Join(cited, ", "))
+	}
+}

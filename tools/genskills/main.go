@@ -34,6 +34,7 @@ var exampleDirs = []string{
 	"remote-mcp-server",
 	"with-repair",
 	"rag-bm25",
+	"rag-gemini-embed",
 }
 
 func main() {

@@ -338,6 +338,38 @@ Vertex("classify").Op("AIBoolOp").
     Output("Result", "is_spam")
 ```
 
+**Multi-factory recipe — two vertices, two credential sources.** When the
+design fans out across tenants / regions / dev-prod, register a factory
+per id and set distinct ids on each vertex. The factory registry is
+orthogonal to `provider` and `model`: one factory can back both Claude
+and Gemini vertices, and the same provider can be served by different
+factories per vertex.
+
+```go
+// main() — register every factory the design names BEFORE buildGraph.
+library.RegisterAIClientFactory("tenant-a", &vaultFactory{path: "secret/tenant-a"})
+library.RegisterAIClientFactory("tenant-b", &vaultFactory{path: "secret/tenant-b"})
+
+// Graph — each vertex picks its factory + ref independently.
+Vertex("classify_a").Op("AIBoolOp").
+    Params(map[string]string{
+        "predicate":         "is this in English?",
+        "client_factory_id": "tenant-a",
+        "credential_ref":    "secret/tenant-a/anthropic",
+    }).
+    Input("Input", "text_a").
+    Output("Result", "is_english_a")
+
+Vertex("classify_b").Op("AIBoolOp").
+    Params(map[string]string{
+        "predicate":         "is this in English?",
+        "client_factory_id": "tenant-b",
+        "credential_ref":    "secret/tenant-b/anthropic",
+    }).
+    Input("Input", "text_b").
+    Output("Result", "is_english_b")
+```
+
 Rules:
 - `credential_ref` is opaque to the library — the factory decides what it means
   (Vault path, tenant id, region). Empty = factory default.
@@ -410,6 +442,11 @@ library.RegisterRetriever("kb-a", retrieverA)
 library.RegisterRetriever("kb-b", retrieverB)
 ```
 
+`retriever_id` is the only way to switch embedding *provider* or *model*
+per vertex — those are hardcoded inside each Retriever, not vertex
+params. Register one Retriever per provider/model combination the design
+uses.
+
 Use the named import `clawdag "github.com/akennis/clawdag-go/library"` (or
 `library` alias) to call `SetDefaultRetriever`, `RegisterRetriever`,
 `WithRetrievalFilters`, or `RetrievalFiltersFromContext` from main or from a
@@ -419,6 +456,109 @@ See `references/examples/rag-bm25.go` for the end-to-end pattern including a
 custom inline op that consumes `Documents` to label passages with their
 source filename and a citation parser that extracts the LLM's `Sources:`
 trailer back into `[]string`.
+
+**Embedding credentials (vector-store-backed Retrievers).** Vector-store
+Retrievers (Pinecone, Weaviate, pgvector, sqlite-vec, hosted search) embed
+the query before searching. Never read embedding env vars (`OPENAI_API_KEY`,
+`VOYAGE_API_KEY`, etc.) directly inside a Retriever — route them through
+`library.EmbeddingClientFactory`, the sibling of `AIClientFactory`. The
+canonical call inside a Retriever:
+
+```go
+func (r *MyRetriever) Retrieve(ctx context.Context, q string, k int) ([]library.Document, error) {
+    client, err := library.ResolveEmbeddingClient(ctx, "voyage", "voyage-3")
+    if err != nil {
+        return nil, err
+    }
+    vec, err := client.Embed(ctx, []string{q})
+    if err != nil {
+        return nil, err
+    }
+    // ... search the vector store with vec[0]
+}
+```
+
+`ResolveEmbeddingClient` reads credentials installed on ctx by `RetrieveOp` /
+`RetrieveWithFiltersOp` from their `credential_ref` / `client_factory_id` /
+`api_factory_timeout_ms` params — exactly the same vertex-param surface AI
+ops already use. Register custom factories in `main()` (for Vault / Secrets
+Manager / per-tenant rotation) the same way you register an AIClientFactory:
+
+```go
+library.SetDefaultEmbeddingClientFactory(&myVaultEmbeddingFactory{})
+// or for multi-tenant routing:
+library.RegisterEmbeddingClientFactory("tenant-a", &tenantAFactory{})
+```
+
+The bundled `EnvEmbeddingClientFactory` supports only `provider="gemini"`
+via the existing `genai` SDK (reads `GEMINI_API_KEY`). For any other
+provider you MUST register a custom factory — the default rejects unknown
+providers with a clear error at Setup. When the design doesn't mention
+embeddings (BM25, hosted search with its own auth), emit the retrieval
+vertex with no credential params; the ctx values are inert if the
+Retriever never calls `ResolveEmbeddingClient`.
+
+See `references/examples/rag-gemini-embed.go` for the end-to-end
+vector-store pattern (Gemini embeddings + cosine similarity over an
+in-memory index, indexing at construction time with
+`context.Background()`, query-time `ResolveEmbeddingClient` honoring
+per-request credentials overridden via ctx). Swap the in-memory cosine
+for pgvector / sqlite-vec / Pinecone / Weaviate without changing any of
+the credential-routing code.
+
+**Multi-retriever + multi-factory recipe.** `retrieverRegistry` and
+`embeddingFactoryRegistry` are two independent maps. Three axes
+(`retriever_id`, `client_factory_id`, `credential_ref`) compose per
+vertex with no coupling:
+
+- Same provider, different credentials → ONE Retriever + multiple
+  EmbeddingClientFactories, vary `client_factory_id` / `credential_ref`.
+- Different providers, same credentials → MULTIPLE Retrievers + ONE
+  factory, vary `retriever_id`.
+- Different providers AND different credentials → MULTIPLE of each,
+  vary all three.
+
+Worked example — public Voyage-backed KB and private OpenAI-backed KB
+with isolated credentials, fanning out from the same query:
+
+```go
+// main() — register every Retriever and every EmbeddingClientFactory the
+// design names. The two registries do not coordinate; combining them is
+// purely a per-vertex param choice.
+library.RegisterRetriever("public-kb",  newVoyageRetriever(publicDocs))   // hardcodes provider="voyage", model="voyage-3"
+library.RegisterRetriever("private-kb", newOpenAIRetriever(privateDocs))  // hardcodes provider="openai", model="text-embedding-3-small"
+
+library.RegisterEmbeddingClientFactory("voyage-prod",     &vaultVoyageFactory{path: "secret/prod/voyage"})
+library.RegisterEmbeddingClientFactory("openai-tenant-a", &vaultOpenAIFactory{path: "secret/tenant-a/openai"})
+
+// Graph — each retrieve vertex picks its own Retriever AND factory.
+Vertex("retrieve_public").Op("RetrieveOp").
+    Params(map[string]string{
+        "k":                 "3",
+        "retriever_id":      "public-kb",
+        "client_factory_id": "voyage-prod",
+        "credential_ref":    "secret/prod/voyage",
+    }).
+    Input("Query", "question").
+    Output("Documents", "public_docs").
+    Output("Texts", "public_texts")
+
+Vertex("retrieve_private").Op("RetrieveOp").
+    Params(map[string]string{
+        "k":                 "3",
+        "retriever_id":      "private-kb",
+        "client_factory_id": "openai-tenant-a",
+        "credential_ref":    "secret/tenant-a/openai",
+    }).
+    Input("Query", "question").
+    Output("Documents", "private_docs").
+    Output("Texts", "private_texts")
+```
+
+Both vertices run in parallel; each Retriever's
+`library.ResolveEmbeddingClient(ctx, …)` call routes to the
+`EmbeddingClientFactory` matching that vertex's `client_factory_id`,
+isolated from the other branch.
 
 ## AI recovery wrapper (WithRepair)
 When a deterministic op may fail on structurally-fixable bad input (malformed JSON,

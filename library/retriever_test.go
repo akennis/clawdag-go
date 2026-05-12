@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/wwz16/dagor/config"
 )
@@ -20,16 +21,22 @@ type stubRetriever struct {
 }
 
 type stubCall struct {
-	query   string
-	k       int
-	filters map[string]string
+	query      string
+	k          int
+	filters    map[string]string
+	embedCreds EmbeddingCredentials
 }
 
 func (s *stubRetriever) Retrieve(ctx context.Context, query string, k int) ([]Document, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	filters, _ := RetrievalFiltersFromContext(ctx)
-	s.calls = append(s.calls, stubCall{query: query, k: k, filters: filters})
+	s.calls = append(s.calls, stubCall{
+		query:      query,
+		k:          k,
+		filters:    filters,
+		embedCreds: EmbeddingCredentialsFromContext(ctx),
+	})
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -473,6 +480,123 @@ func TestRetrieveWithFiltersOp_RespectsRetrieverID(t *testing.T) {
 	}
 	if len(def.snapshot()) != 0 {
 		t.Fatalf("default retriever was called; should have been bypassed for kb-a")
+	}
+}
+
+// ─── Embedding credentials ctx install ────────────────────────────────────
+
+func TestRetrieveOp_InstallsEmbeddingCredentials(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"credential_ref":         "vault://prod/voyage",
+		"client_factory_id":      "tenant-a",
+		"api_factory_timeout_ms": "1500",
+	})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("retriever calls = %d, want 1", len(calls))
+	}
+	got := calls[0].embedCreds
+	want := EmbeddingCredentials{
+		Ref:            "vault://prod/voyage",
+		FactoryID:      "tenant-a",
+		FactoryTimeout: 1500 * time.Millisecond,
+	}
+	if got != want {
+		t.Fatalf("embedding creds on ctx = %+v, want %+v", got, want)
+	}
+}
+
+func TestRetrieveOp_DefaultEmbeddingFactoryTimeoutApplied(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if got := calls[0].embedCreds.FactoryTimeout; got != 30*time.Second {
+		t.Fatalf("default FactoryTimeout = %v, want 30s", got)
+	}
+}
+
+func TestRetrieveOp_ZeroFactoryTimeoutDisablesDeadline(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"api_factory_timeout_ms": "0"})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if got := calls[0].embedCreds.FactoryTimeout; got != 0 {
+		t.Fatalf("FactoryTimeout = %v, want 0 (disabled)", got)
+	}
+}
+
+func TestRetrieveOp_SetupRejectsMalformedFactoryTimeout(t *testing.T) {
+	withRetrievers(t, &stubRetriever{})
+	op := &RetrieveOp{}
+	err := op.Setup(mustRetrieveParams(t, map[string]string{"api_factory_timeout_ms": "soon"}))
+	if err == nil {
+		t.Fatalf("Setup with malformed timeout: expected error, got nil")
+	}
+}
+
+func TestRetrieveWithFiltersOp_InstallsBothFiltersAndEmbeddingCredentials(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"credential_ref":         "vault://prod/voyage",
+		"client_factory_id":      "tenant-a",
+		"api_factory_timeout_ms": "2000",
+	})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	filters := map[string]string{"tenant": "acme", "category": "billing"}
+	op.Filters = &filters
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("retriever calls = %d, want 1", len(calls))
+	}
+	if calls[0].filters["tenant"] != "acme" || calls[0].filters["category"] != "billing" {
+		t.Fatalf("filters on ctx = %+v, want acme/billing", calls[0].filters)
+	}
+	wantCreds := EmbeddingCredentials{
+		Ref:            "vault://prod/voyage",
+		FactoryID:      "tenant-a",
+		FactoryTimeout: 2000 * time.Millisecond,
+	}
+	if calls[0].embedCreds != wantCreds {
+		t.Fatalf("embedding creds on ctx = %+v, want %+v", calls[0].embedCreds, wantCreds)
 	}
 }
 

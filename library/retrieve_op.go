@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/wwz16/dagor"
 	"github.com/wwz16/dagor/config"
@@ -14,10 +15,13 @@ import (
 const RetrieveOpDescription = `RetrieveOp: pulls the top-k documents most relevant to a query from a registered Retriever (RAG fan-in).
   Params:   k string — number of documents to return (default "5"). Lower values keep prompts compact; higher values broaden recall.
             retriever_id string — selects a Retriever registered via library.RegisterRetriever (default "" → process default set via library.SetDefaultRetriever).
+            credential_ref string — opaque credential identifier installed into ctx for the Retriever (default ""; consumed by library.ResolveEmbeddingClient inside vector-store-backed Retrievers; ignored by Retrievers that don't embed).
+            client_factory_id string — selects a registered EmbeddingClientFactory by id for the Retriever's embedding lookup (default "" → process default set via library.SetDefaultEmbeddingClientFactory).
+            api_factory_timeout_ms string — deadline for the EmbeddingClientFactory credential lookup in milliseconds (default "30000"; "0" disables). Mirrors AIClientFactory's api_factory_timeout_ms.
   Inputs:   Query *string — the natural-language search query.
   Outputs:  Documents []library.Document — full records ({ID, Content, Score, Metadata}) sorted best-first. Use when downstream ops need IDs, scores, or Retriever-specific metadata (citation URL, highlights, timestamps, ACL flags, per-field scores — anything the Retriever stuffed into Metadata).
             Texts []string — parallel slice of Documents[i].Content in the same order. Wire this into AI ops that take *[]string (AISummarizeOp, AIRerankOp, AIBestMatchOp candidates).
-  Setup is fail-fast: if no Retriever is registered the graph errors before any vertex runs. Call SetDefaultRetriever (or RegisterRetriever) before engine.Run.`
+  Setup is fail-fast: if no Retriever is registered the graph errors before any vertex runs. Call SetDefaultRetriever (or RegisterRetriever) before engine.Run. The three credential params are installed into ctx via library.WithEmbeddingCredentials and consumed by user Retrievers via library.ResolveEmbeddingClient — omit them for Retrievers that don't embed (BM25, hosted search with its own auth, etc.).`
 
 // RetrieveOp wraps any registered Retriever so a graph can pull external
 // context (knowledge base, vector store, search service) into a downstream AI
@@ -27,9 +31,12 @@ type RetrieveOp struct {
 	Documents []Document `dag:"output"`
 	Texts     []string   `dag:"output"`
 
-	k           int
-	retrieverID string
-	retriever   Retriever
+	k              int
+	retrieverID    string
+	credRef        string
+	factoryID      string
+	factoryTimeout time.Duration
+	retriever      Retriever
 }
 
 func (op *RetrieveOp) Setup(params *config.Params) error {
@@ -45,6 +52,16 @@ func (op *RetrieveOp) Setup(params *config.Params) error {
 		op.k = n
 	}
 	op.retrieverID = params.GetString("retriever_id", "")
+	op.credRef = params.GetString("credential_ref", "")
+	op.factoryID = params.GetString("client_factory_id", "")
+	op.factoryTimeout = 30 * time.Second
+	if s := params.GetString("api_factory_timeout_ms", ""); s != "" {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return fmt.Errorf("RetrieveOp: param api_factory_timeout_ms = %q: %w", s, err)
+		}
+		op.factoryTimeout = time.Duration(n) * time.Millisecond
+	}
 	r, err := resolveRetriever(op.retrieverID)
 	if err != nil {
 		return fmt.Errorf("RetrieveOp: %w", err)
@@ -57,6 +74,12 @@ func (op *RetrieveOp) Reset() error { return nil }
 
 func (op *RetrieveOp) Run(ctx context.Context) error {
 	slog.DebugContext(ctx, "RetrieveOp.run", "run_id", dagor.RunID(ctx), "k", op.k, "retriever_id", op.retrieverID)
+
+	ctx = WithEmbeddingCredentials(ctx, EmbeddingCredentials{
+		Ref:            op.credRef,
+		FactoryID:      op.factoryID,
+		FactoryTimeout: op.factoryTimeout,
+	})
 
 	docs, err := op.retriever.Retrieve(ctx, *op.Query, op.k)
 	if err != nil {

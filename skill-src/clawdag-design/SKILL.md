@@ -32,7 +32,8 @@ Read the following references before producing any output:
 | Runtime slice → MapOver fan-out → per-item sub-graph → aggregation | `hn-topic-brief.go` |
 | Two AI models in series — Claude generates, Gemini independently verifies | `faithful-summary.go` |
 | Strict parse/validate op + AI-driven minimal-mutation retry on bad input (`WithRepair`) | `with-repair.go` |
-| Retrieval-augmented Q&A — pull context from a knowledge base, ground an AI answer, parse source citations | `rag-bm25.go` |
+| Retrieval-augmented Q&A — lexical (BM25) retriever, ground an AI answer, parse source citations | `rag-bm25.go` |
+| Retrieval-augmented Q&A — vector-store retriever (Gemini embeddings + cosine), with EmbeddingClientFactory plumbing | `rag-gemini-embed.go` |
 
 # AI recovery wrapper (WithRepair) placement
 
@@ -90,12 +91,59 @@ Params on both ops:
 - `k` — number of documents to return (default `"5"`).
 - `retriever_id` — optional; selects a named Retriever registered in
   `main()` via `library.RegisterRetriever`. Omit for the process default
-  set via `library.SetDefaultRetriever`.
+  set via `library.SetDefaultRetriever`. (Each Retriever hardcodes its
+  embedding *provider* and *model* internally; `retriever_id` is the only
+  way to switch them per vertex — see **Per-vertex routing** below.)
+- `credential_ref`, `client_factory_id`, `api_factory_timeout_ms` —
+  optional; same shape as AI ops, but routed to a sibling
+  `library.EmbeddingClientFactory`. Include these ONLY when the design's
+  Retriever embeds the query (vector-store backed — pgvector, Pinecone,
+  Weaviate, sqlite-vec, hosted search that bills the embedding leg
+  separately). Omit them for BM25 / lexical Retrievers and for hosted
+  services that bring their own auth — the ctx values are inert when the
+  Retriever never calls `library.ResolveEmbeddingClient`.
 
 The Retriever implementation lives in `main.go` at the codegen step, not in
 the DAG. The design just names the retrieval vertex and its wiring. See
 `references/examples/rag-bm25.go` for an end-to-end RAG workflow with
 source-file citation extraction.
+
+**Per-vertex routing — three orthogonal axes.** `retriever_id`,
+`client_factory_id`, and `credential_ref` compose independently. Mental
+model:
+
+- `retriever_id` picks the **Retriever instance** — and therefore the
+  embedding provider and model (hardcoded inside the Retriever, not vertex
+  params). Use this when different vertices need different *backends* or
+  different *providers*.
+- `client_factory_id` picks the **EmbeddingClientFactory** — the
+  credential *source* (env, Vault, Secrets Manager, per-tenant rotation).
+  Use this when different vertices need different *credentials*.
+- `credential_ref` is the opaque value handed to that factory (Vault
+  path, tenant id, region). Use this when the factory dispatches on a
+  per-call key.
+
+Same provider, different credentials → register one Retriever, two
+EmbeddingClientFactories. Different providers, same credentials →
+register two Retrievers, one factory. Different providers AND different
+credentials → register two of each.
+
+Example vertex lines for a workflow that retrieves from a public Voyage-
+backed KB and a private OpenAI-backed KB with isolated credentials:
+
+```
+3. **retrieve_public** — `RetrieveOp` — Params: k=3, retriever_id="public-kb", client_factory_id="voyage-prod", credential_ref="secret/prod/voyage"
+   - In: Query ← `question`
+   - Out: Documents → `public_docs`, Texts → `public_texts`
+
+4. **retrieve_private** — `RetrieveOp` — Params: k=3, retriever_id="private-kb", client_factory_id="openai-tenant-a", credential_ref="secret/tenant-a/openai"
+   - In: Query ← `question`
+   - Out: Documents → `private_docs`, Texts → `private_texts`
+```
+
+List every Retriever id and EmbeddingClientFactory id used by the design
+in **Design Rationale** so codegen emits the full `RegisterRetriever` /
+`RegisterEmbeddingClientFactory` calls in `main()`.
 
 # AIClientFactory params (optional — enterprise credential routing)
 
@@ -137,6 +185,28 @@ Example vertex line for a multi-tenant design:
    - In: Input ← `text_a`
    - Out: Result → `is_english_a`
 ```
+
+**Multi-factory — two vertices, two credential sources.** When several AI
+vertices need *isolated* credentials (tenant fan-out, dev/prod split,
+regional routing), register a factory per id and reference distinct ids
+per vertex:
+
+```
+3. **classify_tenant_a** — `AIBoolOp` — Params: predicate="is this in English?", client_factory_id="tenant-a", credential_ref="secret/tenant-a/anthropic"
+   - In: Input ← `text_a`
+   - Out: Result → `is_english_a`
+
+4. **classify_tenant_b** — `AIBoolOp` — Params: predicate="is this in English?", client_factory_id="tenant-b", credential_ref="secret/tenant-b/anthropic"
+   - In: Input ← `text_b`
+   - Out: Result → `is_english_b`
+```
+
+Unlike retrieval, AI op `provider` and `model` ARE vertex params, so a
+single factory implementation can serve multiple providers (Claude +
+Gemini) across vertices — only credential source (`client_factory_id`)
+and routing key (`credential_ref`) need to vary. List every factory id
+used in **Design Rationale** so codegen emits the matching
+`RegisterAIClientFactory` calls in `main()`.
 
 # Steps
 
