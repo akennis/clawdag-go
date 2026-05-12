@@ -13,6 +13,12 @@
 // own Anthropic API key. When a per-cost-center key is unset, the factory
 // falls back to CLAUDE_API_KEY so the demo still runs with the default
 // single-key setup.
+//
+// Env vars are used here purely to keep the example self-contained. A
+// production factory would resolve `credential_ref` against a real
+// credential store — AWS Secrets Manager, GCP Secret Manager, HashiCorp
+// Vault, Azure Key Vault, a KMS-decrypted blob, etc. — instead of reading
+// process environment.
 package main
 
 import (
@@ -326,6 +332,12 @@ func (op *EncodeOtherOp) ResetFields() {
 //
 // Falls back to CLAUDE_API_KEY when the per-cost-center var is unset, so this
 // example still runs end-to-end with a single shared key.
+//
+// The env-var lookup is just what this demo uses. In a real deployment the
+// same factory shape would fetch the key from AWS Secrets Manager, GCP
+// Secret Manager, HashiCorp Vault, Azure Key Vault, a KMS-decrypted blob,
+// or any other credential store — `credential_ref` is the lookup key, and
+// what's behind it is up to the factory implementation.
 type costCenterFactory struct {
 	mu     sync.Mutex
 	cached map[string]*anthropic.Client

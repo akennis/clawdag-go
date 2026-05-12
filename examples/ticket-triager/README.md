@@ -33,3 +33,17 @@ Each invocation prints a JSON document on stdout (debug logs go to stderr) of th
 
 The `ai_nodes` field lists every AI op whose output wire actually fired —
 so the bug, feature, and other lanes show different sets.
+
+## Per-cost-center credentials
+
+Every AI vertex declares a `credential_ref` param (`triage`, `billing`, `bug`,
+`feature`, `other`). The bundled `costCenterFactory` resolves each ref by
+reading `CLAUDE_API_KEY_<COSTCENTER>` from the environment, falling back to
+`CLAUDE_API_KEY` when the per-center var is unset, so the example runs with a
+single shared key.
+
+The env-var lookup is purely for demo convenience. A production factory would
+resolve `credential_ref` against a real credential store — AWS Secrets
+Manager, GCP Secret Manager, HashiCorp Vault, Azure Key Vault, a
+KMS-decrypted blob, etc. — and return the appropriate client. The factory
+interface is the same; only the lookup changes.
