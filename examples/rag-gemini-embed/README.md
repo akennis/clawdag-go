@@ -5,8 +5,9 @@ Retrieval-augmented question answering over a small local knowledge base,
 source-file citations.
 
 The example loads every `.txt` file under `testdata/kb/`, tagging each
-`library.Document` with `Metadata["source"] = "<filename>.txt"`. At
-startup it embeds every passage with Gemini's `text-embedding-005` model
+`library.Document` with `Metadata[library.MetadataSource] = "<filename>.txt"`
+(`library.MetadataSource == "source"`). At
+startup it embeds every passage with Gemini's `gemini-embedding-001` model
 via `library.ResolveEmbeddingClient` (the framework's
 `EmbeddingClientFactory` abstraction — no env-var reads in this example's
 code) and stores the vectors in memory. Each request embeds the query

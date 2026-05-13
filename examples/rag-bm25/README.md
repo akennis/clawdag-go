@@ -4,7 +4,8 @@ Retrieval-augmented question answering over a small local knowledge base,
 **with source-file citations**.
 
 The example loads every `.txt` file under `testdata/kb/`, tagging each
-`library.Document` with `Metadata["source"] = "<filename>.txt"`. The
+`library.Document` with `Metadata[library.MetadataSource] = "<filename>.txt"`
+(`library.MetadataSource == "source"`). The
 documents are indexed by an in-memory BM25 retriever (`bm25.go`) and
 registered as the process default via `library.SetDefaultRetriever`. The
 graph then runs four vertices:
@@ -24,9 +25,17 @@ the model says it used.
 The point of the example is the **pattern**, not BM25 specifically. To swap
 in any other backend — pgvector, sqlite-vec, Pinecone, a hosted search
 service — implement `library.Retriever` and populate `Document.Metadata`
-with whatever the platform returns (`source_url`, `highlights`, scores,
-ACLs). Call `SetDefaultRetriever` with your implementation; the graph stays
-identical.
+with whatever the platform returns (`library.MetadataSourceURL`,
+`library.MetadataHighlights`, scores, ACLs). Call `SetDefaultRetriever` with
+your implementation; the graph stays identical.
+
+The framework exports constants for the metadata keys used by the bundled
+examples and skill text: `library.MetadataSource` (`"source"`),
+`library.MetadataSourceURL` (`"source_url"`),
+`library.MetadataHighlights` (`"highlights"`),
+`library.MetadataUpdatedAt` (`"updated_at"`). Use them instead of bare
+string literals so typos fail at compile time. User retrievers may use
+additional keys not in this list.
 
 ## Running
 
@@ -74,10 +83,10 @@ func (r *MyRetriever) Retrieve(ctx context.Context, query string, k int) ([]libr
             Content: hit.BodyField,
             Score:   hit.RelevanceScore,
             Metadata: map[string]any{
-                "source":     hit.SourceFilename,   // used by this example for citations
-                "source_url": hit.URL,              // e.g. for clickable citations
-                "highlights": hit.MatchedSnippets,  // []string
-                "updated_at": hit.UpdatedAt,        // time.Time
+                library.MetadataSource:     hit.SourceFilename,  // "source" — used by this example for citations
+                library.MetadataSourceURL:  hit.URL,             // "source_url" — clickable citations
+                library.MetadataHighlights: hit.MatchedSnippets, // "highlights" — []string
+                library.MetadataUpdatedAt:  hit.UpdatedAt,       // "updated_at" — time.Time
             },
         },
     }, nil
@@ -95,7 +104,9 @@ vertices can wire `Documents` for ID/score/metadata awareness, or `Texts`
 (the parallel `[]string`) for the common case of just feeding content into
 an AI op.
 
-The citation behavior in this example assumes `Metadata["source"]` holds a
-human-readable filename string. If your Retriever uses different metadata
-keys (e.g. `url` instead of `source`), update `sourceFilename` in `main.go`
-to match — the framework doesn't prescribe any particular schema.
+The citation behavior in this example assumes
+`Metadata[library.MetadataSource]` (i.e. `"source"`) holds a human-readable
+filename string. If your Retriever uses different metadata keys (e.g.
+`library.MetadataSourceURL` instead of `library.MetadataSource`), update
+`sourceFilename` in `main.go` to match — the framework doesn't prescribe
+any particular schema.

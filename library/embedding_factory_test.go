@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"google.golang.org/genai"
 )
 
 // recordingEmbeddingFactory captures every Embedder call and returns a nil
@@ -211,6 +213,57 @@ func TestEnvEmbeddingClientFactory_RejectsUnknownProvider(t *testing.T) {
 	}
 }
 
+// TestEnvEmbeddingClientFactory_WarnsOnceWhenRefIgnored asserts the bundled
+// factory logs exactly one warning per ref when the caller passes a
+// non-empty ref — bundled gemini path uses GEMINI_API_KEY only, so routing
+// two refs to the same env key is the silent failure the warn flags. The
+// second resolution of the same ref must NOT re-log (cache hit dedupes).
+//
+// We set GEMINI_API_KEY to a fake value so genai.NewClient succeeds
+// (otherwise the client errors before we can cache, and re-warn would
+// fire on the second call). The fake key never leaves the process.
+func TestEnvEmbeddingClientFactory_WarnsOnceWhenRefIgnored(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-fake-key-not-used")
+	buf := captureSlog(t)
+	f := &EnvEmbeddingClientFactory{}
+	// First call with ref=A: warn fires.
+	if _, err := f.Embedder(context.Background(), "gemini", "gemini-embedding-001", "tenant-a"); err != nil {
+		t.Fatalf("Embedder: %v", err)
+	}
+	// Second call with same ref=A: cache hit, no warn.
+	if _, err := f.Embedder(context.Background(), "gemini", "gemini-embedding-001", "tenant-a"); err != nil {
+		t.Fatalf("Embedder: %v", err)
+	}
+	out := buf.String()
+	n := strings.Count(out, "EnvEmbeddingClientFactory: ref=")
+	if n != 1 {
+		t.Fatalf("expected exactly 1 warning across two same-ref resolutions, got %d; log:\n%s", n, out)
+	}
+	// The msg field interpolates ref=%q, which renders as ref=\"tenant-a\"
+	// (escaped) inside the quoted msg attribute.
+	if !strings.Contains(out, `ref=\"tenant-a\"`) {
+		t.Fatalf("warning msg should include ref=\"tenant-a\"; log:\n%s", out)
+	}
+	if !strings.Contains(out, "GEMINI_API_KEY") {
+		t.Fatalf("warning should mention GEMINI_API_KEY; log:\n%s", out)
+	}
+}
+
+// TestEnvEmbeddingClientFactory_SilentWhenRefEmpty asserts the warning is
+// NOT emitted for the documented "use env defaults" path (ref==""), which
+// is the steady state for almost all callers.
+func TestEnvEmbeddingClientFactory_SilentWhenRefEmpty(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-fake-key-not-used")
+	buf := captureSlog(t)
+	f := &EnvEmbeddingClientFactory{}
+	if _, err := f.Embedder(context.Background(), "gemini", "gemini-embedding-001", ""); err != nil {
+		t.Fatalf("Embedder: %v", err)
+	}
+	if got := buf.String(); strings.Contains(got, "EnvEmbeddingClientFactory: ref=") {
+		t.Fatalf("expected no warning when ref==\"\"; got:\n%s", got)
+	}
+}
+
 func TestRegisterEmbeddingClientFactory_ConcurrentRegistrationIsSafe(t *testing.T) {
 	withEmbeddingFactories(t, &recordingEmbeddingFactory{})
 	const N = 50
@@ -224,4 +277,128 @@ func TestRegisterEmbeddingClientFactory_ConcurrentRegistrationIsSafe(t *testing.
 		}(i)
 	}
 	wg.Wait()
+}
+
+// fakeEmbedOnce records every call it receives and returns one stubbed
+// embedding per input. It powers the chunking tests below without going
+// through the genai SDK.
+type fakeEmbedOnce struct {
+	mu        sync.Mutex
+	callSizes []int
+	errOnCall map[int]error // 1-indexed call number → error to return
+}
+
+func (f *fakeEmbedOnce) fn(_ context.Context, contents []*genai.Content) (*genai.EmbedContentResponse, error) {
+	f.mu.Lock()
+	f.callSizes = append(f.callSizes, len(contents))
+	call := len(f.callSizes)
+	f.mu.Unlock()
+	if err, ok := f.errOnCall[call]; ok {
+		return nil, err
+	}
+	embeds := make([]*genai.ContentEmbedding, len(contents))
+	for i := range contents {
+		// Encode the call number and within-call index into the vector so
+		// tests can verify order across chunks.
+		embeds[i] = &genai.ContentEmbedding{Values: []float32{float32(call), float32(i)}}
+	}
+	return &genai.EmbedContentResponse{Embeddings: embeds}, nil
+}
+
+func TestGeminiEmbeddingClient_Embed_UnderCapMakesSingleCall(t *testing.T) {
+	fake := &fakeEmbedOnce{}
+	c := &geminiEmbeddingClient{model: "gemini-embedding-001", embedOnce: fake.fn}
+	texts := make([]string, geminiEmbeddingMaxBatch) // exactly at cap → still a single call
+	for i := range texts {
+		texts[i] = "t"
+	}
+	out, err := c.Embed(context.Background(), texts)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(out) != geminiEmbeddingMaxBatch {
+		t.Fatalf("len(out) = %d, want %d", len(out), geminiEmbeddingMaxBatch)
+	}
+	if got := fake.callSizes; len(got) != 1 || got[0] != geminiEmbeddingMaxBatch {
+		t.Fatalf("callSizes = %v, want one call of size %d", got, geminiEmbeddingMaxBatch)
+	}
+}
+
+func TestGeminiEmbeddingClient_Embed_OverCapChunksAndPreservesOrder(t *testing.T) {
+	fake := &fakeEmbedOnce{}
+	c := &geminiEmbeddingClient{model: "gemini-embedding-001", embedOnce: fake.fn}
+	const n = 2*geminiEmbeddingMaxBatch + 17 // 217 → 100 + 100 + 17
+	texts := make([]string, n)
+	for i := range texts {
+		texts[i] = "t"
+	}
+	out, err := c.Embed(context.Background(), texts)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(out) != n {
+		t.Fatalf("len(out) = %d, want %d", len(out), n)
+	}
+	wantSizes := []int{geminiEmbeddingMaxBatch, geminiEmbeddingMaxBatch, 17}
+	if got := fake.callSizes; len(got) != len(wantSizes) || got[0] != wantSizes[0] || got[1] != wantSizes[1] || got[2] != wantSizes[2] {
+		t.Fatalf("callSizes = %v, want %v", got, wantSizes)
+	}
+	// Verify order across chunks: fake encodes (callNumber, indexWithinCall)
+	// into each vector. Reconstruct the expected sequence and compare.
+	for i, v := range out {
+		expectedCall := i/geminiEmbeddingMaxBatch + 1
+		expectedIdx := i % geminiEmbeddingMaxBatch
+		if len(v) != 2 || int(v[0]) != expectedCall || int(v[1]) != expectedIdx {
+			t.Fatalf("out[%d] = %v, want [%d %d]", i, v, expectedCall, expectedIdx)
+		}
+	}
+}
+
+func TestGeminiEmbeddingClient_Embed_ErrorInSecondChunkSurfaces(t *testing.T) {
+	wantErr := errors.New("upstream boom")
+	fake := &fakeEmbedOnce{errOnCall: map[int]error{2: wantErr}}
+	c := &geminiEmbeddingClient{model: "gemini-embedding-001", embedOnce: fake.fn}
+	texts := make([]string, geminiEmbeddingMaxBatch+5)
+	for i := range texts {
+		texts[i] = "t"
+	}
+	out, err := c.Embed(context.Background(), texts)
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("Embed err = %v, want wrapping %v", err, wantErr)
+	}
+	if out != nil {
+		t.Fatalf("Embed out = %v on error, want nil", out)
+	}
+	// First chunk should have been attempted (and succeeded); second chunk is
+	// where the error fires; no third chunk in this layout.
+	if got := fake.callSizes; len(got) != 2 {
+		t.Fatalf("callSizes = %v, want exactly 2 calls (success then error)", got)
+	}
+}
+
+func TestGeminiEmbeddingClient_Embed_EmptyInputSkipsAPI(t *testing.T) {
+	fake := &fakeEmbedOnce{}
+	c := &geminiEmbeddingClient{model: "gemini-embedding-001", embedOnce: fake.fn}
+	out, err := c.Embed(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Embed(nil): %v", err)
+	}
+	if out != nil {
+		t.Fatalf("Embed(nil) out = %v, want nil", out)
+	}
+	if len(fake.callSizes) != 0 {
+		t.Fatalf("callSizes = %v, want no calls for empty input", fake.callSizes)
+	}
+}
+
+func TestGeminiEmbeddingClient_Embed_ResponseCountMismatchErrors(t *testing.T) {
+	// Fake returns fewer embeddings than inputs — embedChunk must reject.
+	short := func(_ context.Context, contents []*genai.Content) (*genai.EmbedContentResponse, error) {
+		return &genai.EmbedContentResponse{Embeddings: make([]*genai.ContentEmbedding, len(contents)-1)}, nil
+	}
+	c := &geminiEmbeddingClient{model: "gemini-embedding-001", embedOnce: short}
+	_, err := c.Embed(context.Background(), []string{"a", "b"})
+	if err == nil || !strings.Contains(err.Error(), "response count mismatch") {
+		t.Fatalf("Embed err = %v, want response count mismatch", err)
+	}
 }

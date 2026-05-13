@@ -72,7 +72,10 @@ var stopwords = map[string]bool{
 
 func bagOfWordsVector(text string, dim int) []float32 {
 	v := make([]float32, dim)
-	for _, tok := range tokenize(text) {
+	tokens := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, tok := range tokens {
 		if stopwords[tok] {
 			continue
 		}
@@ -92,12 +95,6 @@ func bagOfWordsVector(text string, dim int) []float32 {
 		v[i] *= inv
 	}
 	return v
-}
-
-func tokenize(text string) []string {
-	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
 }
 
 func newTestRetriever(t *testing.T) *GeminiVectorRetriever {

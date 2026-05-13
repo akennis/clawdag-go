@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"sync"
 
 	"github.com/akennis/clawdag-go/library"
 )
@@ -37,8 +36,9 @@ type GeminiVectorRetriever struct {
 	// indexClient is the EmbeddingClient resolved at construction. The
 	// retriever reuses it for query embedding at Retrieve time, falling back
 	// to ResolveEmbeddingClient if the request ctx carries different
-	// credentials than the indexing ctx did (multi-tenant case).
-	mu          sync.RWMutex
+	// credentials than the indexing ctx did (multi-tenant case). It is set
+	// once by NewGeminiVectorRetriever and never mutated afterward, so reads
+	// need no synchronization.
 	indexClient library.EmbeddingClient
 }
 
@@ -127,11 +127,8 @@ func (r *GeminiVectorRetriever) Retrieve(ctx context.Context, query string, k in
 func (r *GeminiVectorRetriever) queryClient(ctx context.Context) (library.EmbeddingClient, error) {
 	creds := library.EmbeddingCredentialsFromContext(ctx)
 	if creds.Ref == "" && creds.FactoryID == "" {
-		r.mu.RLock()
-		c := r.indexClient
-		r.mu.RUnlock()
-		if c != nil {
-			return c, nil
+		if r.indexClient != nil {
+			return r.indexClient, nil
 		}
 	}
 	return library.ResolveEmbeddingClient(ctx, "gemini", r.model)

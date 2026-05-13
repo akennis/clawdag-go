@@ -16,14 +16,38 @@ import (
 // that doesn't fit into Content. The framework never reads Metadata — it
 // passes through unchanged. Retriever implementations document which keys
 // they populate; downstream custom ops type-assert the values they care
-// about (e.g. `doc.Metadata["source_url"].(string)`). Leave nil when there
-// is nothing extra to carry.
+// about (e.g. `doc.Metadata[MetadataSourceURL].(string)`). Leave nil when
+// there is nothing extra to carry.
 type Document struct {
 	ID       string
 	Content  string
 	Score    float64
 	Metadata map[string]any
 }
+
+// Framework-documented Metadata keys. User retrievers may use additional
+// keys; these are the names the bundled examples and skill text rely on.
+// Prefer these constants over bare string literals at call sites so typos
+// fail at compile time.
+const (
+	// MetadataSource — human-readable source identifier (filename, document
+	// title). Used by the rag-bm25 and rag-gemini-embed examples to label
+	// passages in prompts and validate LLM-reported citations.
+	MetadataSource = "source"
+
+	// MetadataSourceURL — canonical URL for the document. Convention for
+	// clickable citations in downstream UIs.
+	MetadataSourceURL = "source_url"
+
+	// MetadataHighlights — matched snippets from the Retriever, typically
+	// []string. Convention for highlight-rendering downstream ops.
+	MetadataHighlights = "highlights"
+
+	// MetadataUpdatedAt — last-modified timestamp for the document. Type is
+	// Retriever-defined (time.Time, RFC3339 string, Unix int) — document it
+	// in the Retriever.
+	MetadataUpdatedAt = "updated_at"
+)
 
 // Retriever finds the k documents most relevant to a query. Implementations
 // are free to use any backend (BM25, embeddings + vector store, hosted search
@@ -97,6 +121,12 @@ func WithRetrievalFilters(ctx context.Context, filters map[string]string) contex
 // implementations should fall back to unfiltered retrieval in that case.
 //
 // The returned map must not be mutated; concurrent retrievers may share it.
+//
+// Security: filter values are caller-supplied strings and may originate
+// from upstream AI ops (untrusted LLM output); Retriever implementations
+// MUST pass them to the backend through parameterized queries / placeholder
+// bindings, never by string-concatenating them into a SQL WHERE clause,
+// NoSQL query document, or search-engine query DSL.
 func RetrievalFiltersFromContext(ctx context.Context) (map[string]string, bool) {
 	f, ok := ctx.Value(retrievalFiltersKey{}).(map[string]string)
 	return f, ok

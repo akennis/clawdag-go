@@ -1,9 +1,11 @@
 package library
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +13,18 @@ import (
 
 	"github.com/wwz16/dagor/config"
 )
+
+// captureSlog redirects the default slog logger to a buffer for the duration
+// of a test and restores it on cleanup. Use this to assert on warnings the
+// library emits via slog.WarnContext / slog.InfoContext.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
 
 // stubRetriever returns a fixed slice of documents and records calls.
 type stubRetriever struct {
@@ -422,6 +436,84 @@ func TestRetrieveWithFiltersOp_NilFiltersDoesNotInstall(t *testing.T) {
 	}
 }
 
+func TestRetrieveWithFiltersOp_WarnsOnEmptyFilters(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+	buf := captureSlog(t)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	empty := map[string]string{}
+	op.Filters = &empty
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	logs := buf.String()
+	if !strings.Contains(logs, "RetrieveWithFiltersOp has no filters") {
+		t.Fatalf("expected warning naming RetrieveWithFiltersOp and empty Filters; got logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "level=WARN") {
+		t.Fatalf("expected WARN-level log; got logs:\n%s", logs)
+	}
+	// Behavior unchanged: retriever was still called and saw no filters.
+	calls := r.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("retriever calls = %d, want 1", len(calls))
+	}
+	if calls[0].filters != nil {
+		t.Fatalf("retriever saw filters %+v with empty input, want nil", calls[0].filters)
+	}
+}
+
+func TestRetrieveWithFiltersOp_WarnsOnNilFiltersMap(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+	buf := captureSlog(t)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	var nilMap map[string]string
+	op.Filters = &nilMap
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "RetrieveWithFiltersOp has no filters") {
+		t.Fatalf("expected warning for nil-map filters; got logs:\n%s", buf.String())
+	}
+}
+
+func TestRetrieveWithFiltersOp_NoWarnWhenFiltersPresent(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+	buf := captureSlog(t)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	filters := map[string]string{"tenant": "acme"}
+	op.Filters = &filters
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "has no filters") {
+		t.Fatalf("did not expect empty-filters warning when filters are present; got logs:\n%s", buf.String())
+	}
+}
+
 func TestRetrieveWithFiltersOp_PopulatesDocumentsAndTexts(t *testing.T) {
 	docs := []Document{
 		{ID: "a", Content: "alpha body", Score: 0.9},
@@ -517,12 +609,15 @@ func TestRetrieveOp_InstallsEmbeddingCredentials(t *testing.T) {
 	}
 }
 
-func TestRetrieveOp_DefaultEmbeddingFactoryTimeoutApplied(t *testing.T) {
+func TestRetrieveOp_DefaultEmbeddingFactoryTimeoutAppliedWhenCredRefSet(t *testing.T) {
 	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
 	withRetrievers(t, r)
 
+	// When the user sets credential_ref but leaves api_factory_timeout_ms
+	// unset, the ctx-installed credentials must carry the 30s default so
+	// downstream factories have a sane bound on the credential lookup.
 	op := &RetrieveOp{}
-	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"credential_ref": "vault://x"})); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
 	q := "hello"
@@ -564,6 +659,108 @@ func TestRetrieveOp_SetupRejectsMalformedFactoryTimeout(t *testing.T) {
 	}
 }
 
+// TestRetrieveOp_DoesNotInstallEmbeddingCredentialsWhenUnset covers the
+// BM25-style Retriever path: when the vertex sets no credential params,
+// RetrieveOp must NOT touch the embedding-credentials slot on ctx. Any creds
+// the caller installed upstream pass through unchanged; a downstream
+// non-embedding Retriever sees the ctx default.
+func TestRetrieveOp_DoesNotInstallEmbeddingCredentialsWhenUnset(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("retriever calls = %d, want 1", len(calls))
+	}
+	if (calls[0].embedCreds != EmbeddingCredentials{}) {
+		t.Fatalf("embedding creds on ctx = %+v, want zero (no install when params unset)", calls[0].embedCreds)
+	}
+}
+
+// TestRetrieveOp_PreservesUpstreamEmbeddingCredentialsWhenUnset covers the
+// case where a caller pre-installs credentials on ctx before engine.Run; a
+// RetrieveOp with no credential params must leave that value alone.
+func TestRetrieveOp_PreservesUpstreamEmbeddingCredentialsWhenUnset(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	upstream := EmbeddingCredentials{Ref: "vault://upstream", FactoryID: "outer", FactoryTimeout: 5 * time.Second}
+	ctx := WithEmbeddingCredentials(context.Background(), upstream)
+	if err := op.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if calls[0].embedCreds != upstream {
+		t.Fatalf("embedding creds on ctx = %+v, want preserved upstream %+v", calls[0].embedCreds, upstream)
+	}
+}
+
+// TestRetrieveOp_InstallsEmbeddingCredentialsWhenOnlyCredRefSet is the
+// counter-test: setting just credential_ref must trigger the full install,
+// so we don't silently drop a partially-specified credential intent.
+func TestRetrieveOp_InstallsEmbeddingCredentialsWhenOnlyCredRefSet(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"credential_ref": "vault://only-ref"})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if calls[0].embedCreds.Ref != "vault://only-ref" {
+		t.Fatalf("embedding creds Ref = %q, want vault://only-ref", calls[0].embedCreds.Ref)
+	}
+}
+
+// TestRetrieveWithFiltersOp_DoesNotInstallEmbeddingCredentialsWhenUnset is
+// the sibling test for the with-filters op: when no credential params are
+// set, the embedding-credentials slot on ctx is untouched even though
+// retrieval filters are installed.
+func TestRetrieveWithFiltersOp_DoesNotInstallEmbeddingCredentialsWhenUnset(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"static_filters": "tenant=acme"})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("retriever calls = %d, want 1", len(calls))
+	}
+	if (calls[0].embedCreds != EmbeddingCredentials{}) {
+		t.Fatalf("embedding creds on ctx = %+v, want zero (no install when params unset)", calls[0].embedCreds)
+	}
+	if calls[0].filters["tenant"] != "acme" {
+		t.Fatalf("filters on ctx = %+v, want tenant=acme (filters install still runs)", calls[0].filters)
+	}
+}
+
 func TestRetrieveWithFiltersOp_InstallsBothFiltersAndEmbeddingCredentials(t *testing.T) {
 	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
 	withRetrievers(t, r)
@@ -600,6 +797,126 @@ func TestRetrieveWithFiltersOp_InstallsBothFiltersAndEmbeddingCredentials(t *tes
 	}
 }
 
+// blockingRetriever blocks Retrieve until ctx is canceled, then returns
+// ctx.Err() so embed_timeout_ms wiring can be observed end-to-end.
+type blockingRetriever struct {
+	started chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingRetriever) Retrieve(ctx context.Context, _ string, _ int) ([]Document, error) {
+	b.once.Do(func() {
+		if b.started != nil {
+			close(b.started)
+		}
+	})
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestRetrieveOp_EmbedTimeoutBoundsRetrieveCall(t *testing.T) {
+	br := &blockingRetriever{started: make(chan struct{})}
+	withRetrievers(t, br)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"embed_timeout_ms": "20"})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "anything"
+	op.Query = &q
+
+	start := time.Now()
+	err := op.Run(context.Background())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("Run with embed_timeout_ms=20: expected error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run err = %v, want wrapping context.DeadlineExceeded", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Run took %v; deadline should have fired well before this", elapsed)
+	}
+}
+
+func TestRetrieveOp_ZeroEmbedTimeoutImposesNoDeadline(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"embed_timeout_ms": "0"})); err != nil {
+		t.Fatalf("Setup with embed_timeout_ms=0: %v", err)
+	}
+	if op.embedTimeout != 0 {
+		t.Fatalf("op.embedTimeout = %v, want 0 (disabled)", op.embedTimeout)
+	}
+	q := "anything"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRetrieveOp_UnsetEmbedTimeoutImposesNoDeadline(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup with embed_timeout_ms unset: %v", err)
+	}
+	if op.embedTimeout != 0 {
+		t.Fatalf("op.embedTimeout = %v, want 0 (unset)", op.embedTimeout)
+	}
+}
+
+func TestRetrieveOp_SetupRejectsMalformedEmbedTimeout(t *testing.T) {
+	withRetrievers(t, &stubRetriever{})
+	op := &RetrieveOp{}
+	err := op.Setup(mustRetrieveParams(t, map[string]string{"embed_timeout_ms": "soon"}))
+	if err == nil {
+		t.Fatalf("Setup with malformed embed_timeout_ms: expected error, got nil")
+	}
+}
+
+func TestRetrieveOp_SetupRejectsNegativeEmbedTimeout(t *testing.T) {
+	withRetrievers(t, &stubRetriever{})
+	op := &RetrieveOp{}
+	err := op.Setup(mustRetrieveParams(t, map[string]string{"embed_timeout_ms": "-1"}))
+	if err == nil {
+		t.Fatalf("Setup with negative embed_timeout_ms: expected error, got nil")
+	}
+}
+
+func TestRetrieveWithFiltersOp_EmbedTimeoutBoundsRetrieveCall(t *testing.T) {
+	br := &blockingRetriever{started: make(chan struct{})}
+	withRetrievers(t, br)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"embed_timeout_ms": "20"})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "anything"
+	op.Query = &q
+	filters := map[string]string{"tenant": "acme"}
+	op.Filters = &filters
+
+	start := time.Now()
+	err := op.Run(context.Background())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("Run with embed_timeout_ms=20: expected error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run err = %v, want wrapping context.DeadlineExceeded", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Run took %v; deadline should have fired well before this", elapsed)
+	}
+}
+
 func TestRetrieveOp_ConcurrentRetrieveIsSafe(t *testing.T) {
 	r := &stubRetriever{docs: []Document{{ID: "x", Content: "x"}}}
 	withRetrievers(t, r)
@@ -625,5 +942,232 @@ func TestRetrieveOp_ConcurrentRetrieveIsSafe(t *testing.T) {
 	wg.Wait()
 	if len(r.snapshot()) != N {
 		t.Fatalf("retriever received %d calls, want %d", len(r.snapshot()), N)
+	}
+}
+
+// ─── static_filters param ─────────────────────────────────────────────────
+
+func TestRetrieveWithFiltersOp_StaticFiltersOnly_NoRuntimeWire(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+	buf := captureSlog(t)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "tenant=acme,locale=en",
+	})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	// Filters wire intentionally left disconnected (op.Filters == nil).
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("retriever calls = %d, want 1", len(calls))
+	}
+	if calls[0].filters["tenant"] != "acme" || calls[0].filters["locale"] != "en" {
+		t.Fatalf("retriever saw filters %+v, want tenant=acme,locale=en", calls[0].filters)
+	}
+	if len(calls[0].filters) != 2 {
+		t.Fatalf("retriever saw %d filters, want exactly 2", len(calls[0].filters))
+	}
+	if strings.Contains(buf.String(), "has no filters") {
+		t.Fatalf("did not expect empty-filters warning when static_filters is set; got logs:\n%s", buf.String())
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticPlusRuntime_RuntimeOverridesOnCollision(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "tenant=acme,locale=en",
+	})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	// runtime overrides "tenant" and adds "category"; "locale" stays static.
+	runtime := map[string]string{"tenant": "globex", "category": "billing"}
+	op.Filters = &runtime
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("retriever calls = %d, want 1", len(calls))
+	}
+	got := calls[0].filters
+	if got["tenant"] != "globex" {
+		t.Fatalf("merged[tenant] = %q, want %q (runtime wins on collision)", got["tenant"], "globex")
+	}
+	if got["locale"] != "en" {
+		t.Fatalf("merged[locale] = %q, want %q (static survives when not overridden)", got["locale"], "en")
+	}
+	if got["category"] != "billing" {
+		t.Fatalf("merged[category] = %q, want %q (runtime-only key)", got["category"], "billing")
+	}
+	if len(got) != 3 {
+		t.Fatalf("merged has %d keys, want 3", len(got))
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticFiltersWhitespaceAndSpacing(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": " tenant = acme , locale = en ",
+	})); err != nil {
+		t.Fatalf("Setup with padded static_filters: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if calls[0].filters["tenant"] != "acme" || calls[0].filters["locale"] != "en" {
+		t.Fatalf("retriever saw filters %+v, want trimmed tenant=acme,locale=en", calls[0].filters)
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticFiltersMutationIsolation(t *testing.T) {
+	// Run twice; first Run mutates the map a Retriever might keep a reference
+	// to. Second Run must still see the parsed static_filters intact — the op
+	// owes Retrievers a fresh map per call.
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "tenant=acme",
+	})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run #1: %v", err)
+	}
+	// Mutate the map the retriever saw.
+	calls := r.snapshot()
+	calls[0].filters["tenant"] = "mutated"
+	calls[0].filters["injected"] = "bad"
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run #2: %v", err)
+	}
+	calls2 := r.snapshot()
+	if calls2[1].filters["tenant"] != "acme" {
+		t.Fatalf("Run #2 tenant = %q, want %q (mutation from Run #1 leaked into stored staticFilters)", calls2[1].filters["tenant"], "acme")
+	}
+	if _, ok := calls2[1].filters["injected"]; ok {
+		t.Fatalf("Run #2 saw injected key from prior mutation; staticFilters not isolated per call")
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticFiltersMalformed_NoEquals(t *testing.T) {
+	withRetrievers(t, &stubRetriever{})
+	op := &RetrieveWithFiltersOp{}
+	err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "tenant",
+	}))
+	if err == nil {
+		t.Fatalf("Setup with malformed static_filters (no '='): expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "static_filters") {
+		t.Fatalf("error %q does not mention static_filters", err)
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticFiltersMalformed_EmptyKey(t *testing.T) {
+	withRetrievers(t, &stubRetriever{})
+	op := &RetrieveWithFiltersOp{}
+	err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "=value",
+	}))
+	if err == nil {
+		t.Fatalf("Setup with empty key in static_filters: expected error, got nil")
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticFiltersEmptyValueAccepted(t *testing.T) {
+	// "key=" with empty value is well-formed by convention — the Retriever
+	// can interpret an empty string however it likes.
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "tenant=",
+	})); err != nil {
+		t.Fatalf("Setup with empty value (tenant=): %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if v, ok := calls[0].filters["tenant"]; !ok || v != "" {
+		t.Fatalf("filters[tenant] = (%q,%v), want (\"\",true)", v, ok)
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticFiltersMalformed_DuplicateKey(t *testing.T) {
+	withRetrievers(t, &stubRetriever{})
+	op := &RetrieveWithFiltersOp{}
+	err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "tenant=a,tenant=b",
+	}))
+	if err == nil {
+		t.Fatalf("Setup with duplicate key in static_filters: expected error, got nil")
+	}
+}
+
+func TestRetrieveWithFiltersOp_StaticEmpty_RuntimeEmpty_WarnsAndRetrieves(t *testing.T) {
+	// U1 warning regression: when BOTH static and runtime are empty, the
+	// warning still fires (no false positive when static is set).
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+	buf := captureSlog(t)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	empty := map[string]string{}
+	op.Filters = &empty
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(buf.String(), "has no filters") {
+		t.Fatalf("expected warning when both static and runtime filters are empty; got logs:\n%s", buf.String())
+	}
+}
+
+func TestRetrieveWithFiltersOp_NoFiltersWireDisconnected_StaticSet_NoPanic(t *testing.T) {
+	// Confirms the wire can be left disconnected (op.Filters == nil) when
+	// static_filters supplies the values. Pre-U6 this panicked because Run
+	// dereferenced op.Filters unconditionally.
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"static_filters": "tenant=acme",
+	})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	// op.Filters is the zero value (nil *map[string]string).
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run with disconnected Filters wire: %v", err)
 	}
 }

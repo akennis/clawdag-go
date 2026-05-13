@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 
@@ -35,11 +36,19 @@ type EnvAIClientFactory struct {
 
 // Anthropic returns an *anthropic.Client built from CLAUDE_API_KEY. ref is
 // ignored — the env-var path has nothing to route on.
-func (f *EnvAIClientFactory) Anthropic(_ context.Context, ref string) (*anthropic.Client, error) {
+func (f *EnvAIClientFactory) Anthropic(ctx context.Context, ref string) (*anthropic.Client, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if c, ok := f.anthropic[ref]; ok {
 		return c, nil
+	}
+	// Warn at most once per ref that the bundled factory ignores ref and
+	// uses CLAUDE_API_KEY only. The cache miss above guarantees the warn
+	// fires on first resolution; subsequent calls for the same ref hit
+	// the cache and skip this branch entirely. Skip when ref=="" because
+	// that's the documented "use env defaults" path.
+	if ref != "" {
+		slog.WarnContext(ctx, fmt.Sprintf("EnvAIClientFactory: ref=%q is ignored — bundled factory uses CLAUDE_API_KEY env var only. Register a custom factory via RegisterAIClientFactory for per-ref credential routing.", ref), "ref", ref, "provider", "claude")
 	}
 	c := anthropic.NewClient(option.WithAPIKey(os.Getenv("CLAUDE_API_KEY")))
 	if f.anthropic == nil {
@@ -55,6 +64,11 @@ func (f *EnvAIClientFactory) Gemini(ctx context.Context, ref string) (*genai.Cli
 	defer f.mu.Unlock()
 	if c, ok := f.gemini[ref]; ok {
 		return c, nil
+	}
+	// Warn at most once per ref that the bundled factory ignores ref and
+	// uses GEMINI_API_KEY only. Same dedupe pattern as Anthropic above.
+	if ref != "" {
+		slog.WarnContext(ctx, fmt.Sprintf("EnvAIClientFactory: ref=%q is ignored — bundled factory uses GEMINI_API_KEY env var only. Register a custom factory via RegisterAIClientFactory for per-ref credential routing.", ref), "ref", ref, "provider", "gemini")
 	}
 	c, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: os.Getenv("GEMINI_API_KEY")})
 	if err != nil {
