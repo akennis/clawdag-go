@@ -43,9 +43,11 @@ const (
 	// []string. Convention for highlight-rendering downstream ops.
 	MetadataHighlights = "highlights"
 
-	// MetadataUpdatedAt — last-modified timestamp for the document. Type is
-	// Retriever-defined (time.Time, RFC3339 string, Unix int) — document it
-	// in the Retriever.
+	// MetadataUpdatedAt — last-modified timestamp for the document. The
+	// canonical value type is time.Time (UTC recommended); Retriever
+	// implementations MUST NOT store RFC3339 strings, Unix ints, or any
+	// other shape under this key. Downstream consumers may therefore
+	// type-assert directly: doc.Metadata[library.MetadataUpdatedAt].(time.Time).
 	MetadataUpdatedAt = "updated_at"
 )
 

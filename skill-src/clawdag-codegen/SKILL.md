@@ -425,7 +425,8 @@ keys so typos fail at compile time:
 - `library.MetadataSource` — `"source"`
 - `library.MetadataSourceURL` — `"source_url"`
 - `library.MetadataHighlights` — `"highlights"`
-- `library.MetadataUpdatedAt` — `"updated_at"`
+- `library.MetadataUpdatedAt` — `"updated_at"` (canonical value type
+  `time.Time`; assert as `doc.Metadata[library.MetadataUpdatedAt].(time.Time)`)
 
 Example: `doc.Metadata[library.MetadataSource].(string)` rather than
 `doc.Metadata["source"].(string)`. Any other key the design names (tenant

@@ -142,7 +142,7 @@ string literals so typos fail at compile time:
 - `library.MetadataHighlights` — `"highlights"` (matched snippets,
   typically `[]string`)
 - `library.MetadataUpdatedAt` — `"updated_at"` (last-modified timestamp,
-  Retriever-defined type)
+  canonical type `time.Time`; downstream ops type-assert directly)
 
 User retrievers may use additional keys not in this list; those stay as
 bare string literals documented by the Retriever.

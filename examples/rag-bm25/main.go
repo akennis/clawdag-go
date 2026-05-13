@@ -179,6 +179,61 @@ func sourceFilename(d library.Document) string {
 	return d.ID + ".txt"
 }
 
+// RetrievedSourcesOp derives the set of source identifiers actually present
+// in the retrieved documents — the same identifiers BuildRAGPromptOp labelled
+// the passages with. The driver uses this list (NOT the full loaded corpus)
+// to filter LLM-reported citations: an LLM that hallucinates the filename of
+// a real-but-unretrieved KB document would otherwise slip past the check.
+// Input: Documents *[]library.Document. Output: Sources []string — union of
+// non-empty Metadata[library.MetadataSource] values, de-duplicated, ordered
+// by first appearance.
+type RetrievedSourcesOp struct {
+	Documents *[]library.Document `dag:"input"`
+	Sources   []string            `dag:"output"`
+}
+
+func (op *RetrievedSourcesOp) Setup(_ *config.Params) error { return nil }
+func (op *RetrievedSourcesOp) Reset() error                 { return nil }
+func (op *RetrievedSourcesOp) Run(_ context.Context) error {
+	if op.Documents == nil {
+		op.Sources = nil
+		return nil
+	}
+	seen := make(map[string]bool, len(*op.Documents))
+	out := make([]string, 0, len(*op.Documents))
+	for _, d := range *op.Documents {
+		s := sourceFilename(d)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	op.Sources = out
+	return nil
+}
+func (op *RetrievedSourcesOp) InputFields() map[string]any {
+	return map[string]any{"Documents": &op.Documents}
+}
+func (op *RetrievedSourcesOp) OutputFields() map[string]any {
+	return map[string]any{"Sources": &op.Sources}
+}
+func (op *RetrievedSourcesOp) SetInputField(field string, value any) error {
+	if field != "Documents" {
+		return fmt.Errorf("RetrievedSourcesOp: unknown field %q", field)
+	}
+	v, ok := value.(*[]library.Document)
+	if !ok {
+		return fmt.Errorf("RetrievedSourcesOp: Documents: expected *[]library.Document, got %T", value)
+	}
+	op.Documents = v
+	return nil
+}
+func (op *RetrievedSourcesOp) ResetFields() {
+	op.Documents = nil
+	op.Sources = nil
+}
+
 // ParseCitationsOp splits an LLM response of the form
 //   <answer body>
 //   Sources: file1.txt, file2.txt
@@ -196,15 +251,28 @@ func (op *ParseCitationsOp) Setup(_ *config.Params) error { return nil }
 func (op *ParseCitationsOp) Reset() error                 { return nil }
 func (op *ParseCitationsOp) Run(_ context.Context) error {
 	raw := strings.TrimSpace(*op.Raw)
-	lower := strings.ToLower(raw)
-	idx := strings.LastIndex(lower, "sources:")
+	// Find the LAST case-insensitive occurrence of "sources:" using byte
+	// offsets into raw itself. We cannot lowercase a copy and reuse its
+	// indices to slice raw, because strings.ToLower can change byte length
+	// for some non-ASCII runes (e.g. Turkish 'İ' → 'i̇', German 'ß' → 'ss'),
+	// which would misalign the slice and corrupt UTF-8 mid-sequence. The
+	// label "sources:" is pure ASCII and ASCII case-folding never changes
+	// byte length, so a sliding window with strings.EqualFold over the
+	// original bytes is both correct and simple.
+	const marker = "sources:"
+	idx := -1
+	for i := 0; i+len(marker) <= len(raw); i++ {
+		if strings.EqualFold(raw[i:i+len(marker)], marker) {
+			idx = i
+		}
+	}
 	if idx == -1 {
 		op.Body = raw
 		op.Sources = nil
 		return nil
 	}
 	op.Body = strings.TrimRight(raw[:idx], " \t\r\n")
-	csv := strings.TrimSpace(raw[idx+len("sources:"):])
+	csv := strings.TrimSpace(raw[idx+len(marker):])
 	if csv == "" || strings.EqualFold(csv, "none") {
 		op.Sources = nil
 		return nil
@@ -252,6 +320,9 @@ func init() {
 	if err := operator.RegisterOp[BuildRAGPromptOp](); err != nil {
 		log.Fatalf("register BuildRAGPromptOp: %v", err)
 	}
+	if err := operator.RegisterOp[RetrievedSourcesOp](); err != nil {
+		log.Fatalf("register RetrievedSourcesOp: %v", err)
+	}
 	if err := operator.RegisterOp[ParseCitationsOp](); err != nil {
 		log.Fatalf("register ParseCitationsOp: %v", err)
 	}
@@ -272,6 +343,9 @@ func buildGraph() (*graph.Graph, error) {
 		Input("Question", "question").
 		Input("Documents", "documents").
 		Output("Prompt", "prompt").
+		Vertex("retrieved_sources").Op("RetrievedSourcesOp").
+		Input("Documents", "documents").
+		Output("Sources", "retrieved_sources").
 		Vertex("answer").Op("AIComputeStringToStringOp").
 		Params(map[string]string{
 			"operation": "answer the question grounded in the provided context, then cite the source filenames you used",
@@ -284,11 +358,19 @@ func buildGraph() (*graph.Graph, error) {
 		Input("Raw", "raw_answer").
 		Output("Body", "body").
 		Output("Sources", "sources").
+		Vertex("validate_citations").Op("ValidateCitationsOp").
+		Input("Raw", "sources").
+		Input("Allowed", "retrieved_sources").
+		Output("Accepted", "accepted_sources").
+		Output("Rejected", "rejected_sources").
 		Build()
 }
 
 // ─── Knowledge base ────────────────────────────────────────────────────────
 
+// loadKB calls os.ReadFile which follows symlinks. Safe for the in-repo
+// testdata/kb fixture; do NOT point at a user-controlled directory without
+// sandboxing — that exposes arbitrary file read via symlinked entries.
 func loadKB(dir string) ([]library.Document, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -360,13 +442,6 @@ func main() {
 		log.Fatalf("run graph: %v", err)
 	}
 
-	knownSources := map[string]bool{}
-	for _, d := range docs {
-		if s, ok := d.Metadata[library.MetadataSource].(string); ok && s != "" {
-			knownSources[s] = true
-		}
-	}
-
 	if raw, ok := eng.GetOutput("documents"); ok {
 		if p, ok := raw.(*[]library.Document); ok && p != nil {
 			fmt.Fprintln(os.Stderr, "Retrieved passages:")
@@ -386,19 +461,23 @@ func main() {
 		log.Fatalf("answer body not produced")
 	}
 
-	var sources []string
-	if raw, ok := eng.GetOutput("sources"); ok {
+	// Citation validity is enforced by the ValidateCitationsOp vertex inside
+	// the graph: it matches ParseCitationsOp.Sources against
+	// RetrievedSourcesOp.Sources (the identifiers actually present in the
+	// retrieved documents — NOT the full loaded corpus, so a model that
+	// hallucinates the filename of a real-but-unretrieved KB document is
+	// still caught). The driver only reads the post-validation outputs.
+	var cited []string
+	if raw, ok := eng.GetOutput("accepted_sources"); ok {
 		if p, ok := raw.(*[]string); ok && p != nil {
-			sources = *p
+			cited = *p
 		}
 	}
-
-	cited := make([]string, 0, len(sources))
-	for _, s := range sources {
-		if knownSources[s] {
-			cited = append(cited, s)
-		} else {
-			slog.Warn("dropping hallucinated source", "source", s)
+	if raw, ok := eng.GetOutput("rejected_sources"); ok {
+		if p, ok := raw.(*[]string); ok && p != nil {
+			for _, s := range *p {
+				slog.Warn("dropping hallucinated source", "source", s)
+			}
 		}
 	}
 

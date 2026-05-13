@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func runParse(t *testing.T, raw string) *ParseCitationsOp {
@@ -86,5 +87,35 @@ func TestParseCitations_EmptyTrailer(t *testing.T) {
 	}
 	if op.Sources != nil {
 		t.Fatalf("Sources = %v, want nil for empty trailer", op.Sources)
+	}
+}
+
+// TestParseCitations_NonASCIIBodyPreserved guards against the bug where the
+// op derived indices from strings.ToLower(raw) and used them to slice the
+// original raw. Some runes change byte length under lowercasing (Turkish
+// capital I-with-dot 'İ' lowers to 'i̇' = 'i' + combining dot above, +1 byte;
+// German 'ß' lowers to "ss", +1 byte), so indices into the lowercased copy
+// no longer align with raw and the slice can cut a UTF-8 sequence in half,
+// producing mojibake. Both characters appear here in the body. After the
+// fix Body must be valid UTF-8 and contain the originals intact.
+func TestParseCitations_NonASCIIBodyPreserved(t *testing.T) {
+	body := "İstanbul has straße names that change byte length when lowercased."
+	raw := body + "\n\nSources: city.txt"
+	op := runParse(t, raw)
+
+	if !utf8.ValidString(op.Body) {
+		t.Fatalf("Body is not valid UTF-8: %q", op.Body)
+	}
+	if op.Body != body {
+		t.Fatalf("Body = %q, want %q", op.Body, body)
+	}
+	if !strings.Contains(op.Body, "İstanbul") {
+		t.Fatalf("Body lost the Turkish capital İ: %q", op.Body)
+	}
+	if !strings.Contains(op.Body, "straße") {
+		t.Fatalf("Body lost the German ß: %q", op.Body)
+	}
+	if !reflect.DeepEqual(op.Sources, []string{"city.txt"}) {
+		t.Fatalf("Sources = %v, want [city.txt]", op.Sources)
 	}
 }

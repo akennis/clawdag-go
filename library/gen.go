@@ -52,4 +52,5 @@
 //go:generate daggen -type=DefaultIntOp -output=select_defaultint_gen.go
 //go:generate daggen -type=RetrieveOp -output=retrieve_op_gen.go
 //go:generate daggen -type=RetrieveWithFiltersOp -output=retrieve_with_filters_op_gen.go
+//go:generate daggen -type=ValidateCitationsOp -output=validate_citations_op_gen.go
 package library

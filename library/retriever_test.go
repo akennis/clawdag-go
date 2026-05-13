@@ -35,21 +35,24 @@ type stubRetriever struct {
 }
 
 type stubCall struct {
-	query      string
-	k          int
-	filters    map[string]string
-	embedCreds EmbeddingCredentials
+	query           string
+	k               int
+	filters         map[string]string
+	embedCreds      EmbeddingCredentials
+	embedCredsFound bool
 }
 
 func (s *stubRetriever) Retrieve(ctx context.Context, query string, k int) ([]Document, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	filters, _ := RetrievalFiltersFromContext(ctx)
+	creds, found := ctx.Value(embeddingCredsKey{}).(EmbeddingCredentials)
 	s.calls = append(s.calls, stubCall{
-		query:      query,
-		k:          k,
-		filters:    filters,
-		embedCreds: EmbeddingCredentialsFromContext(ctx),
+		query:           query,
+		k:               k,
+		filters:         filters,
+		embedCreds:      creds,
+		embedCredsFound: found,
 	})
 	if s.err != nil {
 		return nil, s.err
@@ -314,7 +317,7 @@ func TestRetrieveOp_MetadataRoundTripsThroughOp(t *testing.T) {
 			Metadata: map[string]any{
 				"source_url": "https://example.com/a",
 				"highlights": []string{"alpha", "body"},
-				"updated_at": "2026-04-01T12:00:00Z",
+				"updated_at": time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
 				"acl":        []string{"public"},
 			},
 		},
@@ -645,8 +648,38 @@ func TestRetrieveOp_ZeroFactoryTimeoutDisablesDeadline(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	calls := r.snapshot()
+	// Explicit-zero must be installed on ctx (distinct from "user said
+	// nothing"), so downstream code can tell "user disabled the deadline"
+	// apart from "no credentials supplied".
+	if !calls[0].embedCredsFound {
+		t.Fatalf("embedding creds not installed on ctx; want installed with FactoryTimeout=0")
+	}
 	if got := calls[0].embedCreds.FactoryTimeout; got != 0 {
 		t.Fatalf("FactoryTimeout = %v, want 0 (disabled)", got)
+	}
+}
+
+// TestRetrieveOp_UnsetFactoryTimeoutNotInstalled is the sibling case to
+// TestRetrieveOp_ZeroFactoryTimeoutDisablesDeadline: when the user does not
+// pass api_factory_timeout_ms at all (and no other credential param), no
+// EmbeddingCredentials value must be installed on ctx. This is what makes the
+// "explicit zero installs" assertion above non-vacuous.
+func TestRetrieveOp_UnsetFactoryTimeoutNotInstalled(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveOp{}
+	if err := op.Setup(mustRetrieveParams(t, nil)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if calls[0].embedCredsFound {
+		t.Fatalf("embedding creds installed on ctx = %+v, want not installed when no params set", calls[0].embedCreds)
 	}
 }
 
@@ -681,8 +714,8 @@ func TestRetrieveOp_DoesNotInstallEmbeddingCredentialsWhenUnset(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("retriever calls = %d, want 1", len(calls))
 	}
-	if (calls[0].embedCreds != EmbeddingCredentials{}) {
-		t.Fatalf("embedding creds on ctx = %+v, want zero (no install when params unset)", calls[0].embedCreds)
+	if calls[0].embedCredsFound {
+		t.Fatalf("embedding creds installed on ctx = %+v, want not installed when params unset", calls[0].embedCreds)
 	}
 }
 
@@ -753,11 +786,62 @@ func TestRetrieveWithFiltersOp_DoesNotInstallEmbeddingCredentialsWhenUnset(t *te
 	if len(calls) != 1 {
 		t.Fatalf("retriever calls = %d, want 1", len(calls))
 	}
-	if (calls[0].embedCreds != EmbeddingCredentials{}) {
-		t.Fatalf("embedding creds on ctx = %+v, want zero (no install when params unset)", calls[0].embedCreds)
+	if calls[0].embedCredsFound {
+		t.Fatalf("embedding creds installed on ctx = %+v, want not installed when params unset", calls[0].embedCreds)
 	}
 	if calls[0].filters["tenant"] != "acme" {
 		t.Fatalf("filters on ctx = %+v, want tenant=acme (filters install still runs)", calls[0].filters)
+	}
+}
+
+// TestRetrieveWithFiltersOp_ZeroFactoryTimeoutDisablesDeadline mirrors the
+// RetrieveOp test: an explicit api_factory_timeout_ms=0 must install creds on
+// ctx with FactoryTimeout=0, distinguishable from the "user said nothing" case.
+func TestRetrieveWithFiltersOp_ZeroFactoryTimeoutDisablesDeadline(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{
+		"api_factory_timeout_ms": "0",
+		"static_filters":         "tenant=acme",
+	})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if !calls[0].embedCredsFound {
+		t.Fatalf("embedding creds not installed on ctx; want installed with FactoryTimeout=0")
+	}
+	if got := calls[0].embedCreds.FactoryTimeout; got != 0 {
+		t.Fatalf("FactoryTimeout = %v, want 0 (disabled)", got)
+	}
+}
+
+// TestRetrieveWithFiltersOp_UnsetFactoryTimeoutNotInstalled is the sibling
+// "unset" case for the with-filters op: when no credential param is set, no
+// EmbeddingCredentials value must be installed on ctx (even though filters
+// install always runs).
+func TestRetrieveWithFiltersOp_UnsetFactoryTimeoutNotInstalled(t *testing.T) {
+	r := &stubRetriever{docs: []Document{{ID: "a", Content: "alpha"}}}
+	withRetrievers(t, r)
+
+	op := &RetrieveWithFiltersOp{}
+	if err := op.Setup(mustRetrieveParams(t, map[string]string{"static_filters": "tenant=acme"})); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	q := "hello"
+	op.Query = &q
+	if err := op.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls := r.snapshot()
+	if calls[0].embedCredsFound {
+		t.Fatalf("embedding creds installed on ctx = %+v, want not installed when no creds param set", calls[0].embedCreds)
 	}
 }
 

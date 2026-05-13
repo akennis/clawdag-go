@@ -94,7 +94,10 @@ func (op *RetrieveOp) Run(ctx context.Context) error {
 	// don't embed (BM25, hosted search with its own auth) leave all three
 	// unset; installing the zero value would still overwrite any creds the
 	// caller installed upstream and could mislead wrappers that read ctx.
-	if op.credRef != "" || op.factoryID != "" || (op.factoryTimeoutSet && op.factoryTimeout > 0) {
+	// A user-set api_factory_timeout_ms=0 (explicit "disable the deadline")
+	// must still install — the install signals intent, distinct from the
+	// "user said nothing" no-op path.
+	if op.credRef != "" || op.factoryID != "" || op.factoryTimeoutSet {
 		ctx = WithEmbeddingCredentials(ctx, EmbeddingCredentials{
 			Ref:            op.credRef,
 			FactoryID:      op.factoryID,

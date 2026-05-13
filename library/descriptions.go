@@ -108,6 +108,7 @@ func AllDescriptions() string {
 		{"## Retrieval", []string{
 			RetrieveOpDescription,
 			RetrieveWithFiltersOpDescription,
+			ValidateCitationsOpDescription,
 		}},
 		{"## AI", []string{
 			ModeSelectOpDescription,

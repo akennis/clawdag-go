@@ -37,6 +37,13 @@ examples and skill text: `library.MetadataSource` (`"source"`),
 string literals so typos fail at compile time. User retrievers may use
 additional keys not in this list.
 
+**Security:** `loadKB` follows symlinks. The shipped `testdata/kb`
+directory is fine, but in a multi-tenant or untrusted-input setting,
+pointing `loadKB` at a user-controlled directory ships a path-traversal /
+arbitrary-file-read vector (the user can symlink any readable file into
+the directory). Sandbox the directory or replace `os.ReadFile` with a
+symlink-rejecting reader before adapting this loader for production.
+
 ## Running
 
 ```
