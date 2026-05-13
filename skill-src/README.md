@@ -3,7 +3,7 @@
 Two skill packages for designing and generating clawdag-go DAG workflows inside Claude Code
 (or any AI assistant that supports the `SKILL.md / references/` convention).
 
-**This bundle targets `github.com/akennis/clawdag-go v0.1.0`.**
+**This bundle targets `github.com/akennis/clawdag-go@main`.**
 Download the matching bundle version from the [clawdag-go releases page](https://github.com/akennis/clawdag-go/releases)
 when you upgrade to a new library version.
 

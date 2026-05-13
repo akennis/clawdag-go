@@ -2,7 +2,7 @@
 name: clawdag-design
 description: Design a maximally deterministic clawdag-go DAG workflow
 version: 0.1.0
-library_version: github.com/akennis/clawdag-go v0.1.0
+library_version: github.com/akennis/clawdag-go@main
 triggers: [clawdag design, design dag workflow, dag workflow design]
 input:
   task: {type: string, description: "Task description", required: true}

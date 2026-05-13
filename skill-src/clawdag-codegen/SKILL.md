@@ -2,7 +2,7 @@
 name: clawdag-codegen
 description: Generate a compilable Go workflow executable from an approved clawdag-go DAG design
 version: 0.1.0
-library_version: github.com/akennis/clawdag-go v0.1.0
+library_version: github.com/akennis/clawdag-go@main
 triggers: [clawdag codegen, generate workflow code, implement dag design]
 input:
   design:     {type: string, description: "Approved DAG design (output of clawdag-design)", required: true}
@@ -37,16 +37,14 @@ Read the following references before writing any code:
    go <version>
 
    require (
-       github.com/akennis/clawdag-go v0.0.0-00010101000000-000000000000
        github.com/wwz16/dagor v0.0.0
    )
 
    replace (
-       github.com/akennis/clawdag-go => github.com/akennis/clawdag-go v0.0.0-00010101000000-000000000000
        github.com/wwz16/dagor => github.com/akennis/dagor v0.0.0
    )
    ```
-5. Run `go get github.com/akennis/clawdag-go@main` in `<output_dir>` — this resolves the `main` branch to its current commit pseudo-version and updates `go.mod` automatically. Remove the `replace` directive for `clawdag-go` that was written in step 4 (it is no longer needed after this step).
+5. Run `go get github.com/akennis/clawdag-go@main` in `<output_dir>` — this resolves the `main` branch to its current commit pseudo-version and updates `go.mod` automatically.
 6. Run `go mod tidy` in `<output_dir>` — this resolves all remaining dependencies (ants, etc.) and writes `go.sum`.
 7. Run `go build ./...` in `<output_dir>` to compile.
 8. If the build fails, read the error output, fix `main.go`, and re-run step 7.
