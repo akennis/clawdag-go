@@ -1,4 +1,4 @@
-// Package main demonstrates clawdag's remote (HTTP) MCP transport against the
+// Package main demonstrates sparsi's remote (HTTP) MCP transport against the
 // public Cloudflare docs MCP server at https://docs.mcp.cloudflare.com, which
 // exposes the search_cloudflare_documentation tool over streamable HTTP. No
 // subprocess, no API keys.
@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"

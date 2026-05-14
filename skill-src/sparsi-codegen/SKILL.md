@@ -1,18 +1,18 @@
 ---
-name: clawdag-codegen
-description: Generate a compilable Go workflow executable from an approved clawdag-go DAG design
+name: sparsi-codegen
+description: Generate a compilable Go workflow executable from an approved sparsi-go DAG design
 version: 0.1.0
-library_version: github.com/akennis/clawdag-go v0.1.0
-triggers: [clawdag codegen, generate workflow code, implement dag design]
+library_version: github.com/akennis/sparsi-go v0.1.0
+triggers: [sparsi codegen, generate workflow code, implement dag design]
 input:
-  design:     {type: string, description: "Approved DAG design (output of clawdag-design)", required: true}
+  design:     {type: string, description: "Approved DAG design (output of sparsi-design)", required: true}
   output_dir: {type: string, description: "Directory to write generated Go program", required: true}
   task:       {type: string, description: "Original task description", required: false}
 ---
 
 # Context
 
-You are generating Go source code for a clawdag-go DAG workflow from an approved design.
+You are generating Go source code for a sparsi-go DAG workflow from an approved design.
 The output must compile with `go build` and run correctly.
 
 Read the following references before writing any code:
@@ -33,16 +33,16 @@ Read the following references before writing any code:
    go <version>
 
    require (
-       github.com/akennis/clawdag-go v0.0.0-00010101000000-000000000000
+       github.com/akennis/sparsi-go v0.0.0-00010101000000-000000000000
        github.com/wwz16/dagor v0.0.0
    )
 
    replace (
-       github.com/akennis/clawdag-go => github.com/akennis/clawdag-go v0.0.0-00010101000000-000000000000
+       github.com/akennis/sparsi-go => github.com/akennis/sparsi-go v0.0.0-00010101000000-000000000000
        github.com/wwz16/dagor => github.com/akennis/dagor v0.0.0
    )
    ```
-5. Run `go get github.com/akennis/clawdag-go@init` in `<output_dir>` — this resolves the `init` branch to its current commit pseudo-version and updates `go.mod` automatically. Remove the `replace` directive for `clawdag-go` that was written in step 4 (it is no longer needed after this step).
+5. Run `go get github.com/akennis/sparsi-go@init` in `<output_dir>` — this resolves the `init` branch to its current commit pseudo-version and updates `go.mod` automatically. Remove the `replace` directive for `sparsi-go` that was written in step 4 (it is no longer needed after this step).
 6. Run `go mod tidy` in `<output_dir>` — this resolves all remaining dependencies (ants, etc.) and writes `go.sum`.
 7. Run `go build ./...` in `<output_dir>` to compile.
 8. If the build fails, read the error output, fix `main.go`, and re-run step 7.
@@ -100,8 +100,8 @@ There are exactly two ways a value may enter the DAG. Every value falls into one
 
 ```go
 // Before buildGraph: register a named factory that always emits this value
-clawdag.RegisterConst[int]("CountThreshold", 5)
-clawdag.RegisterConst[string]("DefaultMode", "fast")
+sparsi.RegisterConst[int]("CountThreshold", 5)
+sparsi.RegisterConst[string]("DefaultMode", "fast")
 
 // In the graph builder — output field is always "Result"
 graph.NewBuilder("my_graph").
@@ -110,7 +110,7 @@ graph.NewBuilder("my_graph").
 ```
 
 `ConstOp` (the backing type) has no params and no inputs; the value is captured at registration time.
-Use the named import `clawdag "github.com/akennis/clawdag-go/library"` to call `clawdag.RegisterConst`.
+Use the named import `sparsi "github.com/akennis/sparsi-go/library"` to call `sparsi.RegisterConst`.
 
 **Everything else** — CLI flags, user text, env values, runtime-computed values, or anything that could
 vary between runs — MUST be injected via `context.WithValue` using a dedicated unexported key type.
@@ -169,7 +169,7 @@ subprocesses drain on exit:
 defer pool.Release()
 defer library.ShutdownMCPPool(context.Background())
 ```
-Use the named import `clawdag "github.com/akennis/clawdag-go/library"` (or `library` alias)
+Use the named import `sparsi "github.com/akennis/sparsi-go/library"` (or `library` alias)
 to call `ShutdownMCPPool`. Skip the defer when no stdio MCP vertex sets `pool_size`.
 
 ## Custom MCP argument and response shapes
@@ -193,10 +193,10 @@ passing large text (e.g. a fetched web page) to AI ops to stay within context li
 ## Custom AI compute ops
 `AIComputeOp[In, Out]` cannot be used directly in the graph. Embed it in a named concrete struct:
 ```go
-type ScoreOp struct { clawdag.AIComputeOp[string, float64] }
+type ScoreOp struct { sparsi.AIComputeOp[string, float64] }
 func init() { operator.RegisterOp[ScoreOp]() }
 ```
-Use `clawdag "github.com/akennis/clawdag-go/library"` as the named import when embedding
+Use `sparsi "github.com/akennis/sparsi-go/library"` as the named import when embedding
 `AIComputeOp`. When `Out` is a struct, implement `ExpectedFormat() string` and
 `ParseAIResponse(string) error` on `*Out` to replace the default format prompt and parser.
 
@@ -224,7 +224,7 @@ tighten the prompt first; raise `max_retries` only after that.
 
 ### In-conversation self-repair (preferred over wrapping AI ops with `WithRepair`)
 `ParseAIResponse` can opt the op into **in-conversation repair** by returning
-`*clawdag.ErrRepairable{Prompt, Cause}`. When it does, `AIComputeOp.Run` keeps
+`*sparsi.ErrRepairable{Prompt, Cause}`. When it does, `AIComputeOp.Run` keeps
 the same conversation open: it appends the model's prior response as an
 assistant turn, sends `ErrRepairable.Prompt` as the next user turn, and re-asks
 within the same `max_retries` budget. The model retains its prior reasoning
@@ -242,13 +242,13 @@ func (o *ScoreOut) ExpectedFormat() string {
 func (o *ScoreOut) ParseAIResponse(response string) error {
     f, err := strconv.ParseFloat(strings.TrimSpace(response), 64)
     if err != nil {
-        return &clawdag.ErrRepairable{
+        return &sparsi.ErrRepairable{
             Prompt: "Your last response was not a number. Reply with one float in [0, 1].",
             Cause:  err,
         }
     }
     if f < 0 || f > 1 {
-        return &clawdag.ErrRepairable{
+        return &sparsi.ErrRepairable{
             Prompt: fmt.Sprintf("Your last response %v is outside [0, 1]. Clamp it and reply with just the number.", f),
             Cause:  errors.New("out of range"),
         }
@@ -383,7 +383,7 @@ Rules:
 - `api_factory_timeout_ms` is an optional vertex param (string, ms) that caps
   the factory credential lookup at Setup; emit it only when the design's
   vertex line specifies it. `"0"` disables the deadline.
-- Use the named import `clawdag "github.com/akennis/clawdag-go/library"` (or
+- Use the named import `sparsi "github.com/akennis/sparsi-go/library"` (or
   `library`) to call `SetDefaultAIClientFactory` / `RegisterAIClientFactory`.
 
 When the design does NOT mention enterprise credential routing, generate code
@@ -539,7 +539,7 @@ per vertex — those are hardcoded inside each Retriever, not vertex
 params. Register one Retriever per provider/model combination the design
 uses.
 
-Use the named import `clawdag "github.com/akennis/clawdag-go/library"` (or
+Use the named import `sparsi "github.com/akennis/sparsi-go/library"` (or
 `library` alias) to call `SetDefaultRetriever`, `RegisterRetriever`,
 `WithRetrievalFilters`, or `RetrievalFiltersFromContext` from main or from a
 custom Retriever implementation.
@@ -824,9 +824,9 @@ isolated from the other branch.
 ## AI recovery wrapper (WithRepair)
 When a deterministic op may fail on structurally-fixable bad input (malformed JSON,
 near-miss enum, missing field, schema-violating record), wrap it via
-`clawdag.RegisterWithRepair` to give it bounded LLM-driven retry. The inner op opts in
-by returning `*clawdag.ErrRepairable{Prompt, Cause}`; the input type opts in by
-implementing `clawdag.RepairableInput` (`UnmarshalRepair(string) error`).
+`sparsi.RegisterWithRepair` to give it bounded LLM-driven retry. The inner op opts in
+by returning `*sparsi.ErrRepairable{Prompt, Cause}`; the input type opts in by
+implementing `sparsi.RepairableInput` (`UnmarshalRepair(string) error`).
 
 **Where it belongs in the DAG.** WithRepair is most suitable at the **upstream
 boundary** — wrap the op that first ingests outside input (user text, fetched
@@ -836,12 +836,12 @@ value has passed a WithRepair stage, downstream vertices can treat it as well-fo
 and skip defensive re-parsing.
 
 ```go
-// 1. Inner op returns *clawdag.ErrRepairable on repairable failures.
+// 1. Inner op returns *sparsi.ErrRepairable on repairable failures.
 //    Prompt MUST be self-contained — include the current input verbatim,
 //    the validation error, and the exact expected response shape.
 func (op *ParseTicketOp) Run(_ context.Context) error {
     if err := json.Unmarshal([]byte(op.Raw.Text), &op.Result); err != nil {
-        return &clawdag.ErrRepairable{
+        return &sparsi.ErrRepairable{
             Prompt: fmt.Sprintf("Below is invalid ticket JSON (error: %v). %s\n\nInput:\n%s\n\nOutput corrected JSON only.",
                 err, ticketSchemaSpec, op.Raw.Text),
             Cause:  err,
@@ -857,10 +857,10 @@ func (t *TicketRaw) UnmarshalRepair(s string) error { t.Text = strings.TrimSpace
 
 // 3. Register the wrapped op from init() under a distinct name.
 func init() {
-    clawdag.RegisterWithRepair[*ParseTicketOp](
+    sparsi.RegisterWithRepair[*ParseTicketOp](
         "ParseTicketRepair",
         func() *ParseTicketOp { return &ParseTicketOp{} },
-        clawdag.RepairConfig{
+        sparsi.RepairConfig{
             InputField:   "Raw",   // required: the inner field the LLM may mutate
             MaxAttempts:  3,
             PromptPrefix: "You are a strict JSON corrector. Output corrected JSON only.\n\n",
@@ -875,7 +875,7 @@ inner type name. Input/output field names match the inner op exactly:
 Vertex("parse").Op("ParseTicketRepair").Input("Raw", "raw_wire").Output("Result", "parsed_wire")
 ```
 
-Use the `clawdag "github.com/akennis/clawdag-go/library"` named import. When the
+Use the `sparsi "github.com/akennis/sparsi-go/library"` named import. When the
 field to repair is a struct (not a string wrapper), have the struct's
 `UnmarshalRepair` delegate to `xml.Unmarshal` — XML is preferred over JSON for
 record-shaped repair payloads. See `references/examples/with-repair/` for both
@@ -893,10 +893,10 @@ file deletes).
 "context"     // context.WithValue, context.WithTimeout
 "flag"        // CLI flag parsing
 
-// clawdag-go library
-_ "github.com/akennis/clawdag-go/library"     // library ops — always include (triggers init)
+// sparsi-go library
+_ "github.com/akennis/sparsi-go/library"     // library ops — always include (triggers init)
                                               // use named import when calling RegisterConst or embedding AIComputeOp:
-                                              //   clawdag "github.com/akennis/clawdag-go/library"
+                                              //   sparsi "github.com/akennis/sparsi-go/library"
 
 // dagor ecosystem (see references/dagor-api.md for per-package details)
 "github.com/panjf2000/ants/v2"               // goroutine pool

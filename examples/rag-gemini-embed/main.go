@@ -42,7 +42,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"

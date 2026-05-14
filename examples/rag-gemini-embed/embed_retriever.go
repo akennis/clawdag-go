@@ -21,7 +21,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 )
 
 // GeminiVectorRetriever holds a fixed corpus and its precomputed embeddings.

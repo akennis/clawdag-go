@@ -10,15 +10,15 @@ import (
 	"os"
 	"path/filepath"
 
-	dagailib "github.com/akennis/clawdag-go/library"
+	dagailib "github.com/akennis/sparsi-go/library"
 )
 
 func main() {
 	content := "# Available Library Ops\n\n" + dagailib.AllDescriptions() + "\n"
 
 	targets := []string{
-		"skills/clawdag-design/references/library.md",
-		"skills/clawdag-codegen/references/library.md",
+		"skills/sparsi-design/references/library.md",
+		"skills/sparsi-codegen/references/library.md",
 	}
 
 	for _, rel := range targets {

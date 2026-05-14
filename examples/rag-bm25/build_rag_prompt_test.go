@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 )
 
 // runBuildPrompt drives BuildRAGPromptOp directly (no engine) so each test can

@@ -1,15 +1,15 @@
-# clawdag-go
+# sparsi-go
 
-A DAG workflow framework for Go where computation is maximally deterministic and AI is used only where no deterministic solution exists. clawdag-go is a **library**: you import it, you write your own `main`, and you `go build` your workflow into a binary you control.
+A DAG workflow framework for Go where computation is maximally deterministic and AI is used only where no deterministic solution exists. sparsi-go is a **library**: you import it, you write your own `main`, and you `go build` your workflow into a binary you control.
 
-Code generation is handled by **AI assistants over the bundled skills** (`clawdag-design`, `clawdag-codegen`) — see [Claude Code Skills](#claude-code-skills) below. There is no built-in driver binary in this repository.
+Code generation is handled by **AI assistants over the bundled skills** (`sparsi-design`, `sparsi-codegen`) — see [Claude Code Skills](#claude-code-skills) below. There is no built-in driver binary in this repository.
 
 ## Quick Start
 
 Add the library and a DAG engine to your project, then write a `main.go` that builds and runs a graph.
 
 ```bash
-go get github.com/akennis/clawdag-go/library@latest
+go get github.com/akennis/sparsi-go/library@latest
 go get github.com/wwz16/dagor@latest
 go get github.com/panjf2000/ants/v2@latest
 ```
@@ -28,7 +28,7 @@ import (
     "github.com/wwz16/dagor/graph"
     "github.com/wwz16/dagor/operator"
 
-    _ "github.com/akennis/clawdag-go/library" // registers all library ops
+    _ "github.com/akennis/sparsi-go/library" // registers all library ops
 )
 
 func main() {
@@ -56,7 +56,7 @@ For real workflows, see the [`examples/`](examples/) directory — twelve end-to
 
 ## Philosophy
 
-Most AI-assisted workflows treat every step as a prompt. clawdag-go inverts this: the default is a deterministic, composable library of pure-function operators, and AI is invoked only when necessary.
+Most AI-assisted workflows treat every step as a prompt. sparsi-go inverts this: the default is a deterministic, composable library of pure-function operators, and AI is invoked only when necessary.
 
 The result is a workflow that is:
 
@@ -357,7 +357,7 @@ The `ctx` passed to factory methods is bounded by an op-level deadline (default 
 
 ```go
 import (
-    "github.com/akennis/clawdag-go/library"
+    "github.com/akennis/sparsi-go/library"
     "github.com/anthropics/anthropic-sdk-go"
     "google.golang.org/genai"
 )
@@ -494,14 +494,14 @@ go run ./examples/faithful-summary --file article.txt
 
 ## Claude Code Skills
 
-Two installable skill packages let you design and generate clawdag-go workflows interactively through Claude Code (or any AI assistant that supports the `SKILL.md / references/` convention). These skills are **the** way to bootstrap a new workflow — they replace what was previously a built-in driver binary.
+Two installable skill packages let you design and generate sparsi-go workflows interactively through Claude Code (or any AI assistant that supports the `SKILL.md / references/` convention). These skills are **the** way to bootstrap a new workflow — they replace what was previously a built-in driver binary.
 
 | Skill | Trigger | Purpose |
 |---|---|---|
-| `clawdag-design` | `/clawdag-design` | Design a maximally deterministic DAG workflow from a task description, with an interactive refinement loop |
-| `clawdag-codegen` | `/clawdag-codegen` | Generate a Go workflow `main.go` + `go.mod` from an approved design, run `go mod tidy`, and fix any build errors |
+| `sparsi-design` | `/sparsi-design` | Design a maximally deterministic DAG workflow from a task description, with an interactive refinement loop |
+| `sparsi-codegen` | `/sparsi-codegen` | Generate a Go workflow `main.go` + `go.mod` from an approved design, run `go mod tidy`, and fix any build errors |
 
-Download the latest bundle from the [releases page](https://github.com/akennis/clawdag-go/releases) and follow the installation instructions in the bundle's `README.md`.
+Download the latest bundle from the [releases page](https://github.com/akennis/sparsi-go/releases) and follow the installation instructions in the bundle's `README.md`.
 
 ### Generating the skills directory
 
@@ -518,8 +518,8 @@ Sources that feed into `skills/`:
 | `skill-src/README.md` | `skills/README.md` |
 | `skill-src/<skill>/SKILL.md` | `skills/<skill>/SKILL.md` |
 | `skill-src/<skill>/references/examples/README.md` | `skills/<skill>/references/examples/README.md` |
-| `skill-src/clawdag-design/references/design-rules.md` | `skills/clawdag-design/references/design-rules.md` |
-| `skill-src/clawdag-codegen/references/dagor-api.md` | `skills/clawdag-codegen/references/dagor-api.md` |
+| `skill-src/sparsi-design/references/design-rules.md` | `skills/sparsi-design/references/design-rules.md` |
+| `skill-src/sparsi-codegen/references/dagor-api.md` | `skills/sparsi-codegen/references/dagor-api.md` |
 | `examples/0N-*/main.go` | `skills/<skill>/references/examples/0N-*.go` (with `//go:build ignore` prepended) |
 | `library.AllDescriptions()` | `skills/<skill>/references/library.md` |
 
@@ -530,14 +530,14 @@ Generate `skills/` first, then package it into a versioned zip from the repo roo
 **Linux / macOS:**
 ```bash
 go generate .
-cd skills && zip -r ../clawdag-go-skills-v0.1.0.zip clawdag-design clawdag-codegen README.md
+cd skills && zip -r ../sparsi-go-skills-v0.1.0.zip sparsi-design sparsi-codegen README.md
 ```
 
 **Windows (PowerShell):**
 ```powershell
 go generate .
-Compress-Archive -Path skills\clawdag-design, skills\clawdag-codegen, skills\README.md `
-    -DestinationPath clawdag-go-skills-v0.1.0.zip
+Compress-Archive -Path skills\sparsi-design, skills\sparsi-codegen, skills\README.md `
+    -DestinationPath sparsi-go-skills-v0.1.0.zip
 ```
 
 Upload the zip as a release asset alongside the tagged source code.
@@ -547,11 +547,11 @@ Upload the zip as a release asset alongside the tagged source code.
 When cutting a new library version (e.g. `v0.1.0 → v0.2.0`):
 
 1. **Update version references** — three files need the new version string:
-   - `skill-src/clawdag-design/SKILL.md` — `version:` and `library_version:` in frontmatter
-   - `skill-src/clawdag-codegen/SKILL.md` — same frontmatter fields, plus the `require github.com/akennis/clawdag-go` line in the go.mod template in the Steps section
+   - `skill-src/sparsi-design/SKILL.md` — `version:` and `library_version:` in frontmatter
+   - `skill-src/sparsi-codegen/SKILL.md` — same frontmatter fields, plus the `require github.com/akennis/sparsi-go` line in the go.mod template in the Steps section
    - `skill-src/README.md` — the "This bundle targets …" line at the top
 
-2. **Update the dagor replace directive** if `github.com/akennis/dagor` has been tagged at a new version — update the `replace github.com/wwz16/dagor =>` line in the go.mod template in `skill-src/clawdag-codegen/SKILL.md` to match.
+2. **Update the dagor replace directive** if `github.com/akennis/dagor` has been tagged at a new version — update the `replace github.com/wwz16/dagor =>` line in the go.mod template in `skill-src/sparsi-codegen/SKILL.md` to match.
 
 3. **Regenerate and publish** — run `go generate .`, build the zip, upload as a release asset.
 
@@ -570,7 +570,7 @@ Do not edit `*_gen.go` files or anything under `skills/` manually — both are g
 ## File Layout
 
 ```
-clawdag-go/
+sparsi-go/
 ├── gen.go                  — //go:generate directive that assembles skills/
 ├── library/                — the framework itself (importable subpackage)
 │   ├── descriptions.go     — AllDescriptions() — joins all op description constants
@@ -597,12 +597,12 @@ clawdag-go/
 │   └── genskills/main.go   — assembles skills/ from skill-src/, examples/, and library
 ├── skill-src/              — canonical sources for the skill bundle
 │   ├── README.md           — end-user install instructions (→ skills/README.md)
-│   ├── clawdag-design/
+│   ├── sparsi-design/
 │   │   ├── SKILL.md
 │   │   └── references/
 │   │       ├── design-rules.md
 │   │       └── examples/README.md
-│   └── clawdag-codegen/
+│   └── sparsi-codegen/
 │       ├── SKILL.md
 │       └── references/
 │           ├── dagor-api.md

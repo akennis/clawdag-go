@@ -117,7 +117,7 @@ func startMCPSessionFromSpec(ctx context.Context, spec mcpTransportSpec, initTim
 	if err != nil {
 		return nil, err
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "clawdag-go", Version: "0.0.0"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "sparsi-go", Version: "0.0.0"}, nil)
 
 	connectCtx := ctx
 	if initTimeout > 0 {

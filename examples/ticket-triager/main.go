@@ -37,7 +37,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"google.golang.org/genai"
 
-	"github.com/akennis/clawdag-go/library"      // registers library ops
+	"github.com/akennis/sparsi-go/library"      // registers library ops
 	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp
 
 	"github.com/panjf2000/ants/v2"

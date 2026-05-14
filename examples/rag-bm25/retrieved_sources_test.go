@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 )
 
 func runRetrievedSources(t *testing.T, docs []library.Document) *RetrievedSourcesOp {

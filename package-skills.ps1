@@ -2,14 +2,14 @@ $ErrorActionPreference = "Stop"
 
 $root = $PSScriptRoot
 $skillsDir = Join-Path $root "skills"
-$outDir = Join-Path $root "..\clawdag"
+$outDir = Join-Path $root "..\sparsi"
 
 if (-not (Test-Path $skillsDir)) {
     Write-Error "skills/ directory not found - run 'go generate .' first"
     exit 1
 }
 
-foreach ($skill in @("clawdag-design", "clawdag-codegen")) {
+foreach ($skill in @("sparsi-design", "sparsi-codegen")) {
     $src = Join-Path $skillsDir $skill
     $dst = Join-Path $outDir "$skill.zip"
 

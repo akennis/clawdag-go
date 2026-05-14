@@ -1,24 +1,24 @@
-# clawdag-go Skills
+# sparsi-go Skills
 
-Two skill packages for designing and generating clawdag-go DAG workflows inside Claude Code
+Two skill packages for designing and generating sparsi-go DAG workflows inside Claude Code
 (or any AI assistant that supports the `SKILL.md / references/` convention).
 
-**This bundle targets `github.com/akennis/clawdag-go v0.1.0`.**
-Download the matching bundle version from the [clawdag-go releases page](https://github.com/akennis/clawdag-go/releases)
+**This bundle targets `github.com/akennis/sparsi-go v0.1.0`.**
+Download the matching bundle version from the [sparsi-go releases page](https://github.com/akennis/sparsi-go/releases)
 when you upgrade to a new library version.
 
 ## Packages
 
 | Package | Purpose |
 |---|---|
-| `clawdag-design` | Design a maximally deterministic DAG workflow from a task description |
-| `clawdag-codegen` | Generate compilable Go code from an approved DAG design |
+| `sparsi-design` | Design a maximally deterministic DAG workflow from a task description |
+| `sparsi-codegen` | Generate compilable Go code from an approved DAG design |
 
 ## Typical workflow
 
-1. `/clawdag-design` — describe your task; the skill produces a structured design document.
+1. `/sparsi-design` — describe your task; the skill produces a structured design document.
 2. Refine the design until you approve it.
-3. `/clawdag-codegen` — provide the approved design and an output directory; the skill writes `main.go` + `go.mod`, runs `go mod tidy`, and fixes any build errors automatically.
+3. `/sparsi-codegen` — provide the approved design and an output directory; the skill writes `main.go` + `go.mod`, runs `go mod tidy`, and fixes any build errors automatically.
 4. Run the compiled binary.
 
 ## Installation
@@ -30,24 +30,24 @@ These skills work with **Claude Code** — available as a CLI, desktop app, and 
 
 **macOS / Linux:**
 ```
-cp -r clawdag-design  ~/.claude/skills/
-cp -r clawdag-codegen ~/.claude/skills/
+cp -r sparsi-design  ~/.claude/skills/
+cp -r sparsi-codegen ~/.claude/skills/
 ```
 
 **Windows (PowerShell):**
 ```
-Copy-Item -Recurse clawdag-design  "$env:USERPROFILE\.claude\skills\"
-Copy-Item -Recurse clawdag-codegen "$env:USERPROFILE\.claude\skills\"
+Copy-Item -Recurse sparsi-design  "$env:USERPROFILE\.claude\skills\"
+Copy-Item -Recurse sparsi-codegen "$env:USERPROFILE\.claude\skills\"
 ```
 
 ### Project-local install (available only in the current project)
 
 ```
-cp -r clawdag-design  .claude/skills/
-cp -r clawdag-codegen .claude/skills/
+cp -r sparsi-design  .claude/skills/
+cp -r sparsi-codegen .claude/skills/
 ```
 
-Then invoke with `/clawdag-design` or `/clawdag-codegen` from any Claude Code session.
+Then invoke with `/sparsi-design` or `/sparsi-codegen` from any Claude Code session.
 
 ## Updating
 
@@ -55,17 +55,17 @@ When a new bundle is released, download the new zip and replace the old director
 
 **macOS / Linux:**
 ```
-rm -rf ~/.claude/skills/clawdag-design ~/.claude/skills/clawdag-codegen
-cp -r clawdag-design  ~/.claude/skills/
-cp -r clawdag-codegen ~/.claude/skills/
+rm -rf ~/.claude/skills/sparsi-design ~/.claude/skills/sparsi-codegen
+cp -r sparsi-design  ~/.claude/skills/
+cp -r sparsi-codegen ~/.claude/skills/
 ```
 
 **Windows (PowerShell):**
 ```
-Remove-Item -Recurse "$env:USERPROFILE\.claude\skills\clawdag-design"
-Remove-Item -Recurse "$env:USERPROFILE\.claude\skills\clawdag-codegen"
-Copy-Item -Recurse clawdag-design  "$env:USERPROFILE\.claude\skills\"
-Copy-Item -Recurse clawdag-codegen "$env:USERPROFILE\.claude\skills\"
+Remove-Item -Recurse "$env:USERPROFILE\.claude\skills\sparsi-design"
+Remove-Item -Recurse "$env:USERPROFILE\.claude\skills\sparsi-codegen"
+Copy-Item -Recurse sparsi-design  "$env:USERPROFILE\.claude\skills\"
+Copy-Item -Recurse sparsi-codegen "$env:USERPROFILE\.claude\skills\"
 ```
 
 No other steps are required — `library.md` is pre-generated in the bundle.

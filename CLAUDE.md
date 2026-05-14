@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-`clawdag-go` is a **framework library**, not an application. It exports Go packages (most notably `library/`) that consumers import to build their own DAG-based workflow programs. The repo also publishes two Claude Code **skills** (`clawdag-design`, `clawdag-codegen`) that an AI assistant uses to generate workflow `main.go` files for end users — codegen is handled entirely by the LLM over the bundled skills, not by any binary in this repo.
+`sparsi-go` is a **framework library**, not an application. It exports Go packages (most notably `library/`) that consumers import to build their own DAG-based workflow programs. The repo also publishes two Claude Code **skills** (`sparsi-design`, `sparsi-codegen`) that an AI assistant uses to generate workflow `main.go` files for end users — codegen is handled entirely by the LLM over the bundled skills, not by any binary in this repo.
 
-The root Go package is intentionally empty (`package clawdag`, no exports). All useful code lives in subpackages.
+The root Go package is intentionally empty (`package sparsi`, no exports). All useful code lives in subpackages.
 
 ## Commands
 
@@ -49,13 +49,13 @@ Workflows are DAGs built from operators (ops). Each op is a Go struct with `dag:
 
 **Library ops** are pure deterministic functions in `library/` (math, string, predicate, select, slice, JSON, IO, time). **AI ops** (`AIComputeOp[In, Out]` variants, `ModeSelectOp`, `AIBoolOp`, `AIScoreOp`, …) call Claude via `anthropic-sdk-go` and are the escape hatch for steps that have no deterministic implementation.
 
-End users do not write the `main.go` themselves — they invoke the `clawdag-design` and `clawdag-codegen` skills in Claude Code, which produce a `main.go` + `go.mod` consuming this library. The generated program follows a `UserInput` / `buildGraph` / dual-mode (`--mode cli|mcp`) pattern documented in `skill-src/clawdag-codegen/SKILL.md`.
+End users do not write the `main.go` themselves — they invoke the `sparsi-design` and `sparsi-codegen` skills in Claude Code, which produce a `main.go` + `go.mod` consuming this library. The generated program follows a `UserInput` / `buildGraph` / dual-mode (`--mode cli|mcp`) pattern documented in `skill-src/sparsi-codegen/SKILL.md`.
 
 ## File layout
 
 ```
-clawdag-go/
-├── gen.go                  — package clawdag (empty); only //go:generate directive lives here
+sparsi-go/
+├── gen.go                  — package sparsi (empty); only //go:generate directive lives here
 ├── library/                — the framework (importable subpackage)
 │   ├── descriptions.go     — AllDescriptions() — joins op description constants for the codegen skill
 │   ├── ai_compute_op.go    — generic AIComputeOp[In, Out] base
@@ -68,10 +68,10 @@ clawdag-go/
 │   └── genskills/main.go   — assembles skills/ from skill-src/, examples/, and library descriptions
 ├── skill-src/              — canonical sources for the skill bundle
 │   ├── README.md
-│   ├── clawdag-design/
+│   ├── sparsi-design/
 │   │   ├── SKILL.md
 │   │   └── references/{design-rules.md, examples/README.md}
-│   └── clawdag-codegen/
+│   └── sparsi-codegen/
 │       ├── SKILL.md
 │       └── references/{dagor-api.md, examples/README.md}
 ├── skills/                 — gitignored build artifact (see go generate .)

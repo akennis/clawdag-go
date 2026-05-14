@@ -21,7 +21,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/akennis/clawdag-go/library"
+	_ "github.com/akennis/sparsi-go/library"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"

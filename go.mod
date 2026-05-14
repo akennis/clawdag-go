@@ -1,4 +1,4 @@
-module github.com/akennis/clawdag-go
+module github.com/akennis/sparsi-go
 
 go 1.25.5
 

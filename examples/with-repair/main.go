@@ -22,7 +22,7 @@
 // (string repair and XML-struct repair) in a single workflow.
 //
 // ASCII DAG (WithRepair-wrapped vertices carry a trailing [AI:WithRepair] tag
-// per the clawdag-design renderer hint convention):
+// per the sparsi-design renderer hint convention):
 //
 //	raw_input → parse_ticket [AI:WithRepair] → ticket
 //	         → validate_routing [AI:WithRepair] → validated → render → final
@@ -48,7 +48,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/wwz16/dagor"

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 )
 
 // fakeEmbeddingFactory hands out a fakeEmbeddingClient that maps text to a

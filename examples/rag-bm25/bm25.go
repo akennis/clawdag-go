@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/akennis/clawdag-go/library"
+	"github.com/akennis/sparsi-go/library"
 )
 
 const (

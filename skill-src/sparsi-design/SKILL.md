@@ -1,16 +1,16 @@
 ---
-name: clawdag-design
-description: Design a maximally deterministic clawdag-go DAG workflow
+name: sparsi-design
+description: Design a maximally deterministic sparsi-go DAG workflow
 version: 0.1.0
-library_version: github.com/akennis/clawdag-go v0.1.0
-triggers: [clawdag design, design dag workflow, dag workflow design]
+library_version: github.com/akennis/sparsi-go v0.1.0
+triggers: [sparsi design, design dag workflow, dag workflow design]
 input:
   task: {type: string, description: "Task description", required: true}
 ---
 
 # Context
 
-You are designing a DAG workflow using the clawdag-go library. Your goal is a maximally
+You are designing a DAG workflow using the sparsi-go library. Your goal is a maximally
 deterministic design: every step that can be a library op or custom deterministic Go op MUST be.
 AI calls are reserved for genuine natural-language parsing or subjective judgment where no
 deterministic alternative exists.

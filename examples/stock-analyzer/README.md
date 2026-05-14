@@ -4,7 +4,7 @@ This example demonstrates a hybrid deterministic/AI workflow that fetches live s
 
 ## What this example shows
 
-- **Zero Custom Operators**: Demonstrates how to build complex logic using only the `clawdag-go` standard library.
+- **Zero Custom Operators**: Demonstrates how to build complex logic using only the `sparsi-go` standard library.
 - **Dynamic URL Building**: Uses `RegisterConst` and `StringConcatOp` to build API URLs for the given ticker.
 - **Parallel Data Fetching**: Fetches stock quotes and news headlines in parallel using `HTTPGetOp`.
 - **JSON Extraction**: Uses `JSONExtractOp` to pull specific fields from nested API responses.

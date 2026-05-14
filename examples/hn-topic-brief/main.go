@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/akennis/clawdag-go/library"    // registers library ops
+	_ "github.com/akennis/sparsi-go/library"    // registers library ops
 	_ "github.com/wwz16/dagor/operator/builtin" // registers CoalesceNStringOp
 
 	"github.com/panjf2000/ants/v2"

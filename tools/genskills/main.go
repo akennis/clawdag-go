@@ -4,8 +4,8 @@
 //   - skill-src/README.md                                            → verbatim copy
 //   - skill-src/<skill>/SKILL.md                                     → verbatim copy
 //   - skill-src/<skill>/references/examples/README.md                → verbatim copy
-//   - skill-src/clawdag-design/references/design-rules.md            → verbatim copy
-//   - skill-src/clawdag-codegen/references/dagor-api.md              → verbatim copy
+//   - skill-src/sparsi-design/references/design-rules.md            → verbatim copy
+//   - skill-src/sparsi-codegen/references/dagor-api.md              → verbatim copy
 //   - examples/<name>/*.go (non-test)                                → examples/<name>/<file>.go (with //go:build ignore prepended to each)
 //   - library.AllDescriptions()                                      → library.md (per skill)
 //
@@ -20,10 +20,10 @@ import (
 	"sort"
 	"strings"
 
-	dagailib "github.com/akennis/clawdag-go/library"
+	dagailib "github.com/akennis/sparsi-go/library"
 )
 
-var skillNames = []string{"clawdag-design", "clawdag-codegen"}
+var skillNames = []string{"sparsi-design", "sparsi-codegen"}
 
 var exampleDirs = []string{
 	"ticket-triager",
@@ -56,12 +56,12 @@ func main() {
 	}
 
 	mustCopy(
-		"skill-src/clawdag-design/references/design-rules.md",
-		"skills/clawdag-design/references/design-rules.md",
+		"skill-src/sparsi-design/references/design-rules.md",
+		"skills/sparsi-design/references/design-rules.md",
 	)
 	mustCopy(
-		"skill-src/clawdag-codegen/references/dagor-api.md",
-		"skills/clawdag-codegen/references/dagor-api.md",
+		"skill-src/sparsi-codegen/references/dagor-api.md",
+		"skills/sparsi-codegen/references/dagor-api.md",
 	)
 
 	for _, exDir := range exampleDirs {
