@@ -40,3 +40,5 @@ library/skills/
 
 # local mcp
 .playwright-mcp/
+
+.clause/settings.local.json
